@@ -1,5 +1,6 @@
-import scrapy,re
+import scrapy,re,time
 from btbbt.myFileItem import MyFileItem
+from btbbt.movieInfoItem import movieInfo
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
     name = 'btbbt' # 定义spider名称
@@ -59,8 +60,9 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
 
     # 获取电影详细信息，磁力链接地址，种子下载地址
     def movieParse(self,response):
-        movieTitle = "".join(response.css('div.bg1.border.post h2 a::text').extract())
-        movieTitle = movieTitle + "_".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
+        movieTtpe = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
+        movieName = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
+        self.log(movieTtpe+'--------'+movieName)
         movieMagnet = ""
         movieEd2k = ""
         movieFileUrl = ""
@@ -71,6 +73,20 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             m = p.findall(movieStr)
             if len(m) >0:
                 movieMagnet = m[0]
+
+        # 电影信息入库处理
+        if movieTtpe is not None:
+            movieItem = movieInfo()
+            movieItem['type'] = movieTtpe
+            movieItem['name'] = movieName
+            movieItem['status'] = '1'
+            if movieMagnet is not None:
+                movieItem['downLoadUrl'] = movieMagnet
+            movieItem['createTime'] = time.time()
+            movieItem['editTime'] = time.time()
+            self.log(movieItem)
+            yield movieInfo
+        '''
         # 附件列表
         fileList = response.css('div.attachlist a')
         for item in fileList:
@@ -78,7 +94,9 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             # 种子文件下载地址
             movieFileUrl = response.urljoin(url)
             yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
-        self.log("电影信息:{0}，磁力连接地址：{1}，种子文件下载地址：{2}".format(movieTitle,movieMagnet,movieFileUrl))
+        self.log("电影信息:{0}，磁力连接地址：{1}，种子文件下载地址：{2}".format(movieName,movieMagnet,movieFileUrl))
+        '''
+
 
     def btSeedParse(self,response):
         btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())
