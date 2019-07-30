@@ -1,4 +1,4 @@
-import scrapy,re,time
+import scrapy,re,time,random
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
 
@@ -66,9 +66,9 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         movieMagnet = ""
         movieEd2k = ""
         movieFileUrl = ""
-        movieInfo = response.css('p').extract()
-        if len(movieInfo)>0:
-            movieStr = "".join(movieInfo).replace('\t','').replace('\r','').replace('\n','')
+        movieText = response.css('p').extract()
+        if len(movieText)>0:
+            movieStr = "".join(movieText).replace('\t','').replace('\r','').replace('\n','')
             p = re.compile(r'magnet:\?xt=urn:btih:[0-9a-fA-F]{40}')
             m = p.findall(movieStr)
             if len(m) >0:
@@ -77,9 +77,10 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         # 电影信息入库处理
         if movieTtpe is not None:
             movieItem = movieInfo()
+            movieItem['id'] = str(random.randint(0,10000))
             movieItem['type'] = movieTtpe
             movieItem['name'] = movieName
-            movieItem['status'] = '1'
+            movieItem['status'] = 1
             if movieMagnet is not None:
                 movieItem['downLoadUrl'] = movieMagnet
             movieItem['createTime'] = time.time()
