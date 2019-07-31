@@ -63,9 +63,10 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         movieTtpe = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         movieName = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         self.log(movieTtpe+'--------'+movieName)
-        movieMagnet = ""
-        movieEd2k = ""
-        movieFileUrl = ""
+        movieMagnet = ''
+        movieEd2k = ''
+        baiduWp = ''
+        movieFileUrl = ''
         movieText = response.css('p').extract()
         if len(movieText)>0:
             movieStr = "".join(movieText).replace('\t','').replace('\r','').replace('\n','')
@@ -73,20 +74,25 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             m = p.findall(movieStr)
             if len(m) >0:
                 movieMagnet = m[0]
+            p = re.compile(r'ed2k://\|file\|.*?\|/')
+            m = p.findall(movieStr)
+            if len(m) >0:
+                movieEd2k = m[0]
 
         # 电影信息入库处理
         if movieTtpe is not None:
             movieItem = movieInfo()
             movieItem['id'] = str(random.randint(0,10000))
-            movieItem['type'] = movieTtpe
-            movieItem['name'] = movieName
+            movieItem['type'] = movieTtpe.replace('][',',').replace('[','').replace(']','')
+            movieItem['name'] = movieName.replace('][',',').replace('[','').replace(']','')
             movieItem['status'] = 1
             if movieMagnet is not None:
                 movieItem['downLoadUrl'] = movieMagnet
+            if movieEd2k is not None:
+                movieItem['ed2kUrl'] = movieEd2k
             movieItem['createTime'] = time.time()
             movieItem['editTime'] = time.time()
-            self.log(movieItem)
-            yield movieInfo
+            yield movieItem
         '''
         # 附件列表
         fileList = response.css('div.attachlist a')

@@ -10,7 +10,6 @@ import pymysql.cursors
 from urllib.parse import urlparse
 from os.path import basename,dirname,join
 
-
 class BtbbtPipeline(object):
     def process_item(self, item, spider):
         return item
@@ -39,15 +38,19 @@ class mysqlPipline(object):
         self.cursor = self.connect.cursor()
 
     def process_item(self, item, spider):
-        self.cursor.execute(
-            """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME)
-                       value (%s, %s, %s, %d, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
-            (item['id'],
-             item['name'],  # item里面定义的字段和表字段对应
-             item['type'],
-             item['status'],
-             item['downLoadUrl'],
-             item['createTime'],
-             item['editTime'],))
-        self.connect.commit()
+        try:
+            self.cursor.execute(
+                """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
+                (item['id'],
+                 item['name'],  # item里面定义的字段和表字段对应
+                 item['type'],
+                 item['status'],
+                 item['ed2kUrl'],
+                 item['downLoadUrl'],
+                 item['createTime'],
+                 item['editTime'],))
+            self.connect.commit()
+        except Exception as e:
+            e
         return item # 必须返回

@@ -67,7 +67,7 @@ ROBOTSTXT_OBEY = True
 # 文件下载器中间件
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
-    'btbbt.pipelines.mysqlPipline': 1,
+    'btbbt.pipelines.mysqlPipline': 2,
 }
 # 文件存放地址
 FILES_STORE = 'd'

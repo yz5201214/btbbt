@@ -5,6 +5,7 @@ class movieInfo(scrapy.Item):
         name = scrapy.Field()
         type = scrapy.Field()
         status = scrapy.Field()
+        ed2kUrl = scrapy.Field()
         downLoadUrl = scrapy.Field()
         createTime = scrapy.Field()
         editTime = scrapy.Field()
