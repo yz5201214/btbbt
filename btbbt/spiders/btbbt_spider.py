@@ -1,4 +1,4 @@
-import scrapy,re,time,random
+import scrapy,re,time,random,uuid
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
 
@@ -44,13 +44,13 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
                     yield scrapy.Request(realUrl,callback=self.movieParse)
-
         '''
+        已经测试可
         # 下面是翻页请求
         next_pages = response.css('div.page a')
         self.log(next_pages[len(next_pages)-1].css('a::text').extract_first())
         if next_pages[len(next_pages)-1].css('a::text').extract_first() == '▶':
-            next_ur = mainUrl + next_pages[len(next_pages)-1].css('a::attr("href")').extract_first()
+            next_ur = response.urljoin(next_pages[len(next_pages)-1].css('a::attr("href")').extract_first())
         # 下面开始翻页请求
         self.log("下一页地址：%s" % next_ur)
         if next_ur is not None:
@@ -79,21 +79,27 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             if len(m) >0:
                 movieEd2k = m[0]
 
+
+        '''
         # 电影信息入库处理
         if movieTtpe is not None:
             movieItem = movieInfo()
-            movieItem['id'] = str(random.randint(0,10000))
+            movieItem['id'] = str(uuid.uuid4())
+            # ,隔开的数组[年份,地区,类型,广告类型]
             movieItem['type'] = movieTtpe.replace('][',',').replace('[','').replace(']','')
+            # ,隔开的数组[下载类型,名称,文件类型/大小,字幕类型,分辨率]
             movieItem['name'] = movieName.replace('][',',').replace('[','').replace(']','')
             movieItem['status'] = 1
             if movieMagnet is not None:
                 movieItem['downLoadUrl'] = movieMagnet
             if movieEd2k is not None:
                 movieItem['ed2kUrl'] = movieEd2k
-            movieItem['createTime'] = time.time()
-            movieItem['editTime'] = time.time()
+            movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             yield movieItem
         '''
+
+        # 测试通过
         # 附件列表
         fileList = response.css('div.attachlist a')
         for item in fileList:
@@ -101,16 +107,18 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             # 种子文件下载地址
             movieFileUrl = response.urljoin(url)
             yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
-        self.log("电影信息:{0}，磁力连接地址：{1}，种子文件下载地址：{2}".format(movieName,movieMagnet,movieFileUrl))
-        '''
+
 
 
     def btSeedParse(self,response):
         btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())
-        self.log("下载地址：%s" % btFileUrl)
+        btName = response.css('div.width.border.bg1 dd::text').extract_first()
+        self.log("下载地址：%s，文件名词：%s" % (btFileUrl,btName))
         myfileItem = MyFileItem()
         myfileItem['file_urls'] = [btFileUrl]
+        myfileItem['file_name'] = btName
         return myfileItem
+
 
 
 

@@ -6,7 +6,7 @@
 # See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 from scrapy.pipelines.files import FilesPipeline
 # pymsql是pyton的数据库包
-import pymysql.cursors
+import pymysql.cursors,scrapy
 from urllib.parse import urlparse
 from os.path import basename,dirname,join
 
@@ -18,11 +18,17 @@ class btFilesPipeline(FilesPipeline):
 
     def file_path(self, request, response=None, info=None):
         # 获取文件下载路径
-        path = urlparse(request.url).path
-
+        item = request.meta['item']
+        #  = urlparse(request.url).path
         # 根据文件名称保存
         # return join(basename(dirname(path)),basename(path))
-        return '%s/%s.torrent' % (basename(dirname(path)), basename(path))
+        # return '%s' % (basename(item['file_name']))
+        return '%s' % item['file_name']
+
+    # 只能通过这个方法进行item传递
+    def get_media_requests(self, item, info):
+        for file_urls in item['file_urls']:
+            yield scrapy.Request(file_urls, meta={'item': item})
 
 class mysqlPipline(object):
     def __init__(self):
@@ -43,7 +49,7 @@ class mysqlPipline(object):
                 """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME)
                            value (%s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
                 (item['id'],
-                 item['name'],  # item里面定义的字段和表字段对应
+                 item['name'],  #item里面定义的字段和表字段对应
                  item['type'],
                  item['status'],
                  item['ed2kUrl'],
