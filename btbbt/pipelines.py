@@ -7,15 +7,13 @@
 from scrapy.pipelines.files import FilesPipeline
 # pymsql是pyton的数据库包
 import pymysql.cursors,scrapy
-from urllib.parse import urlparse
-from os.path import basename,dirname,join
+import collections
 
 class BtbbtPipeline(object):
     def process_item(self, item, spider):
         return item
 
 class btFilesPipeline(FilesPipeline):
-
     def file_path(self, request, response=None, info=None):
         # 获取文件下载路径
         item = request.meta['item']
@@ -24,11 +22,12 @@ class btFilesPipeline(FilesPipeline):
         # return join(basename(dirname(path)),basename(path))
         # return '%s' % (basename(item['file_name']))
         return '%s' % item['file_name']
-
     # 只能通过这个方法进行item传递
     def get_media_requests(self, item, info):
-        for file_urls in item['file_urls']:
-            yield scrapy.Request(file_urls, meta={'item': item})
+        # 只有文件下载的时候才需要
+        if 'file_urls' in item.keys():
+            for fileUrl in item['file_urls']:
+                yield scrapy.Request(fileUrl, meta={'item': item})
 
 class mysqlPipline(object):
     def __init__(self):
@@ -46,8 +45,8 @@ class mysqlPipline(object):
     def process_item(self, item, spider):
         try:
             self.cursor.execute(
-                """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME)
-                           value (%s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
+                """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
                 (item['id'],
                  item['name'],  #item里面定义的字段和表字段对应
                  item['type'],
@@ -55,7 +54,8 @@ class mysqlPipline(object):
                  item['ed2kUrl'],
                  item['downLoadUrl'],
                  item['createTime'],
-                 item['editTime'],))
+                 item['editTime'],
+                 item['allInfo'],))
             self.connect.commit()
         except Exception as e:
             e

@@ -9,4 +9,5 @@ class movieInfo(scrapy.Item):
         downLoadUrl = scrapy.Field()
         createTime = scrapy.Field()
         editTime = scrapy.Field()
+        allInfo = scrapy.Field()
         pass

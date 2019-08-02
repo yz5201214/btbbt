@@ -79,8 +79,6 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             if len(m) >0:
                 movieEd2k = m[0]
 
-
-        '''
         # 电影信息入库处理
         if movieTtpe is not None:
             movieItem = movieInfo()
@@ -96,10 +94,18 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 movieItem['ed2kUrl'] = movieEd2k
             movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            movieItem['allInfo'] = "".join(movieText)
             yield movieItem
-        '''
 
-        # 测试通过
+        # 详细信息中的图片文件下载，按照原路径保存
+        if len(response.css('p img')) > 0:
+            for imgList in response.css('p img'):
+                myfileItem = MyFileItem()
+                if imgList.css('img::attr("src")').extract_first().find('http') == -1:
+                    myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
+                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
+                    yield myfileItem
+
         # 附件列表
         fileList = response.css('div.attachlist a')
         for item in fileList:
@@ -107,8 +113,6 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             # 种子文件下载地址
             movieFileUrl = response.urljoin(url)
             yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
-
-
 
     def btSeedParse(self,response):
         btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())
