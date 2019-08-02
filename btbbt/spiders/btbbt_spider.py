@@ -83,6 +83,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         if movieTtpe is not None:
             movieItem = movieInfo()
             movieItem['id'] = str(uuid.uuid4())
+            movieItem['spiderUrl'] = response.url
             # ,隔开的数组[年份,地区,类型,广告类型]
             movieItem['type'] = movieTtpe.replace('][',',').replace('[','').replace(']','')
             # ,隔开的数组[下载类型,名称,文件类型/大小,字幕类型,分辨率]

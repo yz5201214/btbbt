@@ -7,7 +7,12 @@
 from scrapy.pipelines.files import FilesPipeline
 # pymsql是pyton的数据库包
 import pymysql.cursors,scrapy
-import collections
+# 要想使用redis模块，需要导入的不是redis ，而是redis-py，需要py一下才行
+from redis import Redis
+
+
+# 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重,db不知道啥意思
+redis_db = Redis(host='d-flat.gangway.cn',port=6379,password='88888888',db=4)
 
 class BtbbtPipeline(object):
     def process_item(self, item, spider):
@@ -45,9 +50,10 @@ class mysqlPipline(object):
     def process_item(self, item, spider):
         try:
             self.cursor.execute(
-                """insert into F_M_INFO(F_ID, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO)
-                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
+                """insert into F_M_INFO(F_ID, F_SPIDER_URL, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
                 (item['id'],
+                 item['spiderUrl'],
                  item['name'],  #item里面定义的字段和表字段对应
                  item['type'],
                  item['status'],
@@ -60,3 +66,6 @@ class mysqlPipline(object):
         except Exception as e:
             e
         return item # 必须返回
+    # 当spider关闭的时候，关闭数据库连接
+    def close_spider(self,spider):
+        self.connect.close()
