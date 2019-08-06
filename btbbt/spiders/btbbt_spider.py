@@ -1,6 +1,7 @@
 import scrapy,re,time,random,uuid
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
+from btbbt.pipelines import redis_db, redis_data_dict
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
     name = 'btbbt' # 定义spider名称
@@ -25,6 +26,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
     # 针对网页爬取完成后的内容进行处理
     def parse(self, response):
         next_ur = None
+        num = None
         '''
         start_request 已经爬取到了网页内容，parse是将内容进行解析，分析，获取本身我自己需要的数据内容
         流程是：1。爬取指定的内容页 2.通过返回内容自定义规则提取数据
@@ -32,6 +34,12 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         :return: 必须返回
         ::attr("href")
         '''
+        if redis_db.hget(redis_data_dict,'movieSize') is not None:
+            # 初始化第0页开始
+            if redis_db.get('pageNum') is None:
+                num = 0
+            else:
+                num = int(redis_db.get('pageNum'))
 
         # 开始解析其中具体电影内容
         movidTableList = response.css('#threadlist table')
@@ -43,18 +51,28 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
+                    # 利用redis去重，在redis_data_dict中是否已经存在该URL，如果存在不爬取
+                    if redis_db.hexists(redis_data_dict, realUrl):
+                        # 如果存在，直接剔除该item，但是这里有个问题，如果我是线程执行，那么redis的生存周期怎么设置
+                        self.log('该电影已经入库，无需重复入库 %s' % realUrl)
+                        break
                     yield scrapy.Request(realUrl,callback=self.movieParse)
         '''
         已经测试可
-        # 下面是翻页请求
+        # 下面是翻页请求next_ur
         next_pages = response.css('div.page a')
         self.log(next_pages[len(next_pages)-1].css('a::text').extract_first())
         if next_pages[len(next_pages)-1].css('a::text').extract_first() == '▶':
             next_ur = response.urljoin(next_pages[len(next_pages)-1].css('a::attr("href")').extract_first())
-        # 下面开始翻页请求
+        # 下面开始翻页请求 
         self.log("下一页地址：%s" % next_ur)
-        if next_ur is not None:
-            next_ur = next_ur
+        # 第一次爬取，爬到所有翻页没有停止
+        if next_ur is not None and num is None:
+            yield scrapy.Request(next_ur,callback=self.parse)
+        # 往后的增量爬取，只取前十页数据即可
+        if next_ur is not None and num is not None and num >=10:
+            num = num + 1
+            redis_db.set('pageNum', num)
             yield scrapy.Request(next_ur,callback=self.parse)
         '''
 
@@ -98,6 +116,8 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             movieItem['allInfo'] = "".join(movieText)
             yield movieItem
 
+
+        '''
         # 详细信息中的图片文件下载，按照原路径保存
         if len(response.css('p img')) > 0:
             for imgList in response.css('p img'):
@@ -114,6 +134,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             # 种子文件下载地址
             movieFileUrl = response.urljoin(url)
             yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
+        '''
 
     def btSeedParse(self,response):
         btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())

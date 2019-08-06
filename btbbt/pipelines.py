@@ -7,12 +7,17 @@
 from scrapy.pipelines.files import FilesPipeline
 # pymsql是pyton的数据库包
 import pymysql.cursors,scrapy
+import pandas as pd
 # 要想使用redis模块，需要导入的不是redis ，而是redis-py，需要py一下才行
 from redis import Redis
+# scrapy 常用异常处理类
+from scrapy.exceptions import DropItem
 
 
-# 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重,db不知道啥意思
+# 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
+# 如果当前链接被占用，那么会去链接db
 redis_db = Redis(host='d-flat.gangway.cn',port=6379,password='88888888',db=4)
+redis_data_dict = 'f_url'
 
 class BtbbtPipeline(object):
     def process_item(self, item, spider):
@@ -46,6 +51,20 @@ class mysqlPipline(object):
             use_unicode=True)
         # 进行数据库连接初始化
         self.cursor = self.connect.cursor()
+        # 没错清理全部的key，重新进行匹配，保证数据的时效性
+        redis_db.flushdb()
+        # 这里是过期时间，过期时间单位：秒
+        # redis_db.expire(redis_data_dict,20)
+        if redis_db.hlen(redis_data_dict) == 0:
+            selectSQL = 'select F_SPIDER_URL from F_M_INFO'
+            df = pd.read_sql(selectSQL,self.connect)# 读myql数据库
+            for url in df['F_SPIDER_URL'].get_values():
+                # 数据库所有的值全部加入，用于去重处理
+                # redis_data_dict 指定字典，key = url ,value = 0，这里要比对的实际是请求地址，那么拿url做key即可
+                redis_db.hset(redis_data_dict,url,0)
+                redis_db.hset(redis_data_dict,'movieSize',len(df))
+
+
 
     def process_item(self, item, spider):
         try:
