@@ -8,7 +8,7 @@ from scrapy.pipelines.files import FilesPipeline
 # pymsql是pyton的数据库包
 import pymysql.cursors,scrapy
 import pandas as pd
-# 要想使用redis模块，需要导入的不是redis ，而是redis-py，需要py一下才行
+# 要想使用redis模块，需要导入的不是redis ，而是redispy，需要py一下才行
 from redis import Redis
 # scrapy 常用异常处理类
 from scrapy.exceptions import DropItem
@@ -110,7 +110,7 @@ class bbsMysqlPipline(object):
                 """insert into pre_forum_thread(tid,fid,posttableid,typeid,sortid,readperm,price,author,authorid,subject,dateline,lastpost,lastposter,views,replies,displayorder,highlight,digest,rate,special,attachment,moderated,closed,stickreply,recommends,recommend_add,recommend_sub,heats,status,isgroup,favtimes,sharetimes,stamp,icon,pushedaid,cover,replycredit,relatebytag,maxposition,bgcolor,comments,hidden)
                            value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
                 (onliyId,'2','0','0','0','0','0','admin','1',bbsItem['subject'],bbsItem['dataline'],bbsItem['dataline'],
-                'admin','3','0','0','0','0','0','0',
+                'admin','1','0','0','0','0','0','0',
                 bbsItem['attachment'],
                 '0','0','0','0','0','0','0','32','0','0','0','-1','-1','0','0','0','0','1','','0','0',))
             self.connect.commit()
@@ -128,19 +128,23 @@ class bbsMysqlPipline(object):
             self.connect.commit()
 
             if bbsItem['attachment'] is not None and bbsItem['attachment'] !='0':
+                # 最后一位，用于附件详情表存放
+                xStr = str(onliyId)
+                xStr = xStr[len(xStr) - 1:len(xStr)]
                 # 附件主表
                 self.cursor.execute(
                     """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
                                value (%s, %s, %s, %s, %s, %s)""",
                     # 纯属python操作mysql知识，不熟悉请恶补
-                    (onliyId,onliyId,onliyId,onliyId,'1','0',))
+                    (onliyId,onliyId,onliyId,'1','1','0',))
                 self.connect.commit()
                 # 附件内容表
                 self.cursor.execute(
                     """insert into pre_forum_attachment_1(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid)
                                value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     # 纯属python操作mysql知识，不熟悉请恶补
-                    (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'],'1000',bbsItem['attachment'],'0','','0','0','0','0','0','0',))
+                    # +xStr
+                    (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'],'1000',bbsItem['attachmentUrl'],'0','','0','0','0','0','0','0',))
                 self.connect.commit()
         except Exception as e:
             e

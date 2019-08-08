@@ -9,6 +9,6 @@ class bbsItem(scrapy.Item):
     message = scrapy.Field()# 帖子详情
     # 附件主表
     fileName = scrapy.Field() # 附件名称
-    attachment = scrapy.Field() # 附件地址
+    attachmentUrl = scrapy.Field() # 附件地址
     pass
 

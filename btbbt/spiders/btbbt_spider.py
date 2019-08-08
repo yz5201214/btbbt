@@ -163,7 +163,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             bbs['message'] = movieItem['allInfo']
             if len(movieFiles)>0:
                 bbs['fileName'] = movieFiles[0]
-                bbs['attachment'] = movieFiles[0]
+                bbs['attachmentUrl'] = movieFiles[0]
             yield bbs
 
 
