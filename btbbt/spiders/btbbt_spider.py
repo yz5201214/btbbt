@@ -1,6 +1,7 @@
-import scrapy,re,time,random,uuid
+import scrapy,re,time,random,uuid,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
+from btbbt.bbsPostItem import bbsItem
 from btbbt.pipelines import redis_db, redis_data_dict
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
@@ -51,11 +52,16 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
+
+                    '''
                     # 利用redis去重，在redis_data_dict中是否已经存在该URL，如果存在不爬取
                     if redis_db.hexists(redis_data_dict, realUrl):
                         # 如果存在，直接剔除该item，但是这里有个问题，如果我是线程执行，那么redis的生存周期怎么设置
                         self.log('该电影已经入库，无需重复入库 %s' % realUrl)
                         break
+                    '''
+
+
                     yield scrapy.Request(realUrl,callback=self.movieParse)
         '''
         已经测试可
@@ -78,13 +84,42 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
 
     # 获取电影详细信息，磁力链接地址，种子下载地址
     def movieParse(self,response):
+        onlyId = uuid.uuid4().hex
         movieTtpe = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         movieName = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
-        self.log(movieTtpe+'--------'+movieName)
         movieMagnet = ''
         movieEd2k = ''
         baiduWp = ''
         movieFileUrl = ''
+
+
+        movieImgs = []
+        # 详细信息中的图片文件下载，按照原路径保存
+        if len(response.css('p img')) > 0:
+            for imgList in response.css('p img'):
+                myfileItem = MyFileItem()
+                if imgList.css('img::attr("src")').extract_first().find('http') == -1:
+                    myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
+                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
+                    movieImgs.append(myfileItem['file_name'])
+                    # yield myfileItem
+
+        # 附件列表
+        movieFiles = []
+        fileList = response.css('div.attachlist a')
+        for item in fileList:
+            myfileItem = MyFileItem()
+            url = item.css('a::attr("href")').extract_first()
+            btName = item.css('a::text').extract_first()
+            # 种子文件下载地址
+            movieFileUrl = response.urljoin(url)
+            myfileItem = MyFileItem()
+            myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
+            myfileItem['file_name'] = btName
+            movieFiles.append(btName)
+            # yield myfileItem
+            # yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
+
         movieText = response.css('p').extract()
         if len(movieText)>0:
             movieStr = "".join(movieText).replace('\t','').replace('\r','').replace('\n','')
@@ -100,12 +135,12 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         # 电影信息入库处理
         if movieTtpe is not None:
             movieItem = movieInfo()
-            movieItem['id'] = str(uuid.uuid4())
+            movieItem['id'] = onlyId
             movieItem['spiderUrl'] = response.url
             # ,隔开的数组[年份,地区,类型,广告类型]
-            movieItem['type'] = movieTtpe.replace('][',',').replace('[','').replace(']','')
+            movieItem['type'] = movieTtpe.replace('][', ',').replace('[', '').replace(']', '')
             # ,隔开的数组[下载类型,名称,文件类型/大小,字幕类型,分辨率]
-            movieItem['name'] = movieName.replace('][',',').replace('[','').replace(']','')
+            movieItem['name'] = movieName.replace('][', ',').replace('[', '').replace(']', '')
             movieItem['status'] = 1
             if movieMagnet is not None:
                 movieItem['downLoadUrl'] = movieMagnet
@@ -113,28 +148,24 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 movieItem['ed2kUrl'] = movieEd2k
             movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            movieItem['allInfo'] = "".join(movieText)
-            yield movieItem
+            movieItem['allInfo'] = "".join(movieText).replace('<img src="/upload/','<img src="http://localhost:8081/upload/data/attachment/forum/upload/')
+            if len(movieImgs)>0:
+                movieItem['imgs'] = json.dumps(movieImgs)
+            if len(movieFiles)>0:
+                movieItem['filestr'] = json.dumps(movieFiles)
+            # yield movieItem
 
+            # 然后开始bbs入库
+            bbs = bbsItem()
+            bbs['subject'] = movieItem['type'] + movieItem['name']
+            bbs['dataline'] = str(int(time.time()))
+            bbs['attachment'] = str(len(movieFiles))
+            bbs['message'] = movieItem['allInfo']
+            if len(movieFiles)>0:
+                bbs['fileName'] = movieFiles[0]
+                bbs['attachment'] = movieFiles[0]
+            yield bbs
 
-        '''
-        # 详细信息中的图片文件下载，按照原路径保存
-        if len(response.css('p img')) > 0:
-            for imgList in response.css('p img'):
-                myfileItem = MyFileItem()
-                if imgList.css('img::attr("src")').extract_first().find('http') == -1:
-                    myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
-                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
-                    yield myfileItem
-
-        # 附件列表
-        fileList = response.css('div.attachlist a')
-        for item in fileList:
-            url = item.css('a::attr("href")').extract_first()
-            # 种子文件下载地址
-            movieFileUrl = response.urljoin(url)
-            yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
-        '''
 
     def btSeedParse(self,response):
         btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())

@@ -64,27 +64,87 @@ class mysqlPipline(object):
                 redis_db.hset(redis_data_dict,url,0)
                 redis_db.hset(redis_data_dict,'movieSize',len(df))
 
-
-
     def process_item(self, item, spider):
         try:
             self.cursor.execute(
-                """insert into F_M_INFO(F_ID, F_SPIDER_URL, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO)
-                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
-                (item['id'],
-                 item['spiderUrl'],
-                 item['name'],  #item里面定义的字段和表字段对应
-                 item['type'],
-                 item['status'],
-                 item['ed2kUrl'],
-                 item['downLoadUrl'],
-                 item['createTime'],
-                 item['editTime'],
-                 item['allInfo'],))
+                """insert into F_M_INFO(F_ID, F_SPIDER_URL, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO, F_MOVIE_IMGS, F_MOVIE_FILS)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
+                (item['id'],item['spiderUrl'],item['name'],item['type'],item['status'],item['ed2kUrl'],item['downLoadUrl'],item['createTime'],item['editTime'],item['allInfo'],item['imgs'],item['filestr'],))
             self.connect.commit()
         except Exception as e:
             e
         return item # 必须返回
+    # 当spider关闭的时候，关闭数据库连接
+    def close_spider(self,spider):
+        self.connect.close()
+
+
+class bbsMysqlPipline(object):
+    def __init__(self):
+        self.connect = pymysql.connect(
+            host='d-flat.crosssee.cn',# 数据库地址
+            port=3307,# 端口 注意是int类型
+            db='ultrax',# 数据库名称
+            user='root',# 用户名
+            passwd='88888888',# 用户密码
+            charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
+            use_unicode=True)
+        # 进行数据库连接初始化
+        self.cursor = self.connect.cursor()
+
+    def process_item(self, bbsItem, spider):
+        try:
+            selectSQL = 'select pid from pre_forum_post_tableid order by pid desc limit 1'
+            df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
+            onliyId = int(df['pid'].get_values()[0])+1
+
+            # pid表
+            self.cursor.execute(
+                """insert into pre_forum_post_tableid(pid)
+                           value (%s)""",
+                # 纯属python操作mysql知识，不熟悉请恶补
+                (onliyId,))
+            self.connect.commit()
+
+            self.cursor.execute(
+                """insert into pre_forum_thread(tid,fid,posttableid,typeid,sortid,readperm,price,author,authorid,subject,dateline,lastpost,lastposter,views,replies,displayorder,highlight,digest,rate,special,attachment,moderated,closed,stickreply,recommends,recommend_add,recommend_sub,heats,status,isgroup,favtimes,sharetimes,stamp,icon,pushedaid,cover,replycredit,relatebytag,maxposition,bgcolor,comments,hidden)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
+                (onliyId,'2','0','0','0','0','0','admin','1',bbsItem['subject'],bbsItem['dataline'],bbsItem['dataline'],
+                'admin','3','0','0','0','0','0','0',
+                bbsItem['attachment'],
+                '0','0','0','0','0','0','0','32','0','0','0','-1','-1','0','0','0','0','1','','0','0',))
+            self.connect.commit()
+
+            # 帖子内容表
+            self.cursor.execute(
+                """insert into pre_forum_post(pid,fid,tid,first,author,authorid,subject,dateline,message,useip,port,invisible,anonymous,usesig,htmlon,bbcodeoff,smileyoff,parseurloff,attachment,rate,ratetimes,status,tags,comment,replycredit,position)
+                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                # 纯属python操作mysql知识，不熟悉请恶补
+                (onliyId,'2',onliyId,'1','admin','1',
+                bbsItem['subject'],bbsItem['dataline'],bbsItem['message'],
+                '127.0.0.1','8081','0','0','1','0','0','-1','0',
+                bbsItem['attachment'],
+                '0','0','0','','0','0','1',))
+            self.connect.commit()
+
+            if bbsItem['attachment'] is not None and bbsItem['attachment'] !='0':
+                # 附件主表
+                self.cursor.execute(
+                    """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
+                               value (%s, %s, %s, %s, %s, %s)""",
+                    # 纯属python操作mysql知识，不熟悉请恶补
+                    (onliyId,onliyId,onliyId,onliyId,'1','0',))
+                self.connect.commit()
+                # 附件内容表
+                self.cursor.execute(
+                    """insert into pre_forum_attachment_1(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid)
+                               value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    # 纯属python操作mysql知识，不熟悉请恶补
+                    (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'],'1000',bbsItem['attachment'],'0','','0','0','0','0','0','0',))
+                self.connect.commit()
+        except Exception as e:
+            e
+        return bbsItem # 必须返回
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):
         self.connect.close()

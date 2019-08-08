@@ -11,4 +11,6 @@ class movieInfo(scrapy.Item):
         createTime = scrapy.Field()
         editTime = scrapy.Field()
         allInfo = scrapy.Field()
+        imgs = scrapy.Field()
+        filestr = scrapy.Field()
         pass

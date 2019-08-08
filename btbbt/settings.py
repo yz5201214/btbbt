@@ -68,9 +68,10 @@ ROBOTSTXT_OBEY = True
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
     'btbbt.pipelines.mysqlPipline': 2,
+    'btbbt.pipelines.bbsMysqlPipline': 3,
 }
 # 文件存放地址
-FILES_STORE = 'd'
+FILES_STORE = r'C:\wamp\www\upload\data\attachment\forum'
 # 文件下载有效期，避免下载重复文件，90内下载过不会重复下载
 FILES_EXPIRES = 10
 
