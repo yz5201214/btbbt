@@ -64,16 +64,16 @@ class mysqlPipline(object):
                 redis_db.hset(redis_data_dict,url,0)
                 redis_db.hset(redis_data_dict,'movieSize',len(df))
 
-    def process_item(self, item, spider):
+    def process_item(self, movieInfo, spider):
         try:
             self.cursor.execute(
                 """insert into F_M_INFO(F_ID, F_SPIDER_URL, F_NAME, F_TYPE, F_STATUS, F_ED2K_URL, F_DOWNLOAD_URL, F_CREATE_TIME, F_LAST_EDIT_TIME, F_ALL_INFO, F_MOVIE_IMGS, F_MOVIE_FILS)
                            value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
-                (item['id'],item['spiderUrl'],item['name'],item['type'],item['status'],item['ed2kUrl'],item['downLoadUrl'],item['createTime'],item['editTime'],item['allInfo'],item['imgs'],item['filestr'],))
+                (movieInfo['id'],movieInfo['spiderUrl'],movieInfo['name'],movieInfo['type'],movieInfo['status'],movieInfo['ed2kUrl'],movieInfo['downLoadUrl'],movieInfo['createTime'],movieInfo['editTime'],movieInfo['allInfo'],movieInfo['imgs'],movieInfo['filestr'],))
             self.connect.commit()
         except Exception as e:
             e
-        return item # 必须返回
+        return movieInfo # 必须返回
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):
         self.connect.close()
@@ -94,7 +94,9 @@ class bbsMysqlPipline(object):
 
     def process_item(self, bbsItem, spider):
         try:
-            selectSQL = 'select pid from pre_forum_post_tableid order by pid desc limit 1'
+            fId = '2'# 这里是板块ID，通过统一配置来进行插入
+
+            selectSQL = 'select max(pid)pid from pre_forum_post_tableid'
             df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
             onliyId = int(df['pid'].get_values()[0])+1
 
@@ -109,7 +111,7 @@ class bbsMysqlPipline(object):
             self.cursor.execute(
                 """insert into pre_forum_thread(tid,fid,posttableid,typeid,sortid,readperm,price,author,authorid,subject,dateline,lastpost,lastposter,views,replies,displayorder,highlight,digest,rate,special,attachment,moderated,closed,stickreply,recommends,recommend_add,recommend_sub,heats,status,isgroup,favtimes,sharetimes,stamp,icon,pushedaid,cover,replycredit,relatebytag,maxposition,bgcolor,comments,hidden)
                            value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
-                (onliyId,'2','0','0','0','0','0','admin','1',bbsItem['subject'],bbsItem['dataline'],bbsItem['dataline'],
+                (onliyId,fId,'0','0','0','0','0','admin','1',bbsItem['subject'],bbsItem['dataline'],bbsItem['dataline'],
                 'admin','1','0','0','0','0','0','0',
                 bbsItem['attachment'],
                 '0','0','0','0','0','0','0','32','0','0','0','-1','-1','0','0','0','0','1','','0','0',))
@@ -120,9 +122,9 @@ class bbsMysqlPipline(object):
                 """insert into pre_forum_post(pid,fid,tid,first,author,authorid,subject,dateline,message,useip,port,invisible,anonymous,usesig,htmlon,bbcodeoff,smileyoff,parseurloff,attachment,rate,ratetimes,status,tags,comment,replycredit,position)
                            value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 # 纯属python操作mysql知识，不熟悉请恶补
-                (onliyId,'2',onliyId,'1','admin','1',
+                (onliyId,fId,onliyId,'1','admin','1',
                 bbsItem['subject'],bbsItem['dataline'],bbsItem['message'],
-                '127.0.0.1','8081','0','0','1','0','0','-1','0',
+                '127.0.0.1','8081','0','0','1','1','0','-1','0',
                 bbsItem['attachment'],
                 '0','0','0','','0','0','1',))
             self.connect.commit()
@@ -136,19 +138,28 @@ class bbsMysqlPipline(object):
                     """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
                                value (%s, %s, %s, %s, %s, %s)""",
                     # 纯属python操作mysql知识，不熟悉请恶补
-                    (onliyId,onliyId,onliyId,'1','1','0',))
+                    (onliyId,onliyId,onliyId,'1',xStr,'0',))
                 self.connect.commit()
                 # 附件内容表
-                self.cursor.execute(
-                    """insert into pre_forum_attachment_1(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid)
-                               value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                insert_sql = "INSERT INTO pre_forum_attachment_"+xStr+"(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                self.cursor.execute(insert_sql,
                     # 纯属python操作mysql知识，不熟悉请恶补
                     # +xStr
                     (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'],'1000',bbsItem['attachmentUrl'],'0','','0','0','0','0','0','0',))
                 self.connect.commit()
+
+
+            # 更新板块主题数目，今日发帖数等
+            lastpost = ['test',bbsItem['subject'],bbsItem['dataline'],'admin']
+            lastpostStr = '	'.join(lastpost)
+            updateForumSql = "update pre_forum_forum set threads = threads +1 , posts = posts +1 , todayposts = todayposts +1 , lastpost = '"+lastpostStr+"' where fid = %s "
+            self.cursor.execute(updateForumSql,(fId,))
+            self.connect.commit()
         except Exception as e:
             e
+            self.connect.rollback()
         return bbsItem # 必须返回
+
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):
         self.connect.close()

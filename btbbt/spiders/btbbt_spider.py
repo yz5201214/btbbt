@@ -52,16 +52,11 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
-
-                    '''
                     # 利用redis去重，在redis_data_dict中是否已经存在该URL，如果存在不爬取
                     if redis_db.hexists(redis_data_dict, realUrl):
                         # 如果存在，直接剔除该item，但是这里有个问题，如果我是线程执行，那么redis的生存周期怎么设置
                         self.log('该电影已经入库，无需重复入库 %s' % realUrl)
                         break
-                    '''
-
-
                     yield scrapy.Request(realUrl,callback=self.movieParse)
         '''
         已经测试可
@@ -91,8 +86,6 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         movieEd2k = ''
         baiduWp = ''
         movieFileUrl = ''
-
-
         movieImgs = []
         # 详细信息中的图片文件下载，按照原路径保存
         if len(response.css('p img')) > 0:
@@ -102,7 +95,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                     myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
                     myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
                     movieImgs.append(myfileItem['file_name'])
-                    # yield myfileItem
+                    yield myfileItem
 
         # 附件列表
         movieFiles = []
@@ -117,10 +110,11 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
             myfileItem['file_name'] = btName
             movieFiles.append(btName)
-            # yield myfileItem
-            # yield scrapy.Request(movieFileUrl,callback=self.btSeedParse)
+            yield myfileItem
 
         movieText = response.css('p').extract()
+        # 移除最后一个P元素
+        movieText.pop()
         if len(movieText)>0:
             movieStr = "".join(movieText).replace('\t','').replace('\r','').replace('\n','')
             p = re.compile(r'magnet:\?xt=urn:btih:[0-9a-fA-F]{40}')
@@ -153,7 +147,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 movieItem['imgs'] = json.dumps(movieImgs)
             if len(movieFiles)>0:
                 movieItem['filestr'] = json.dumps(movieFiles)
-            # yield movieItem
+            yield movieItem
 
             # 然后开始bbs入库
             bbs = bbsItem()
@@ -165,16 +159,6 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 bbs['fileName'] = movieFiles[0]
                 bbs['attachmentUrl'] = movieFiles[0]
             yield bbs
-
-
-    def btSeedParse(self,response):
-        btFileUrl = response.urljoin(response.css('div.width.border.bg1 a::attr("href")').extract_first())
-        btName = response.css('div.width.border.bg1 dd::text').extract_first()
-        self.log("下载地址：%s，文件名词：%s" % (btFileUrl,btName))
-        myfileItem = MyFileItem()
-        myfileItem['file_urls'] = [btFileUrl]
-        myfileItem['file_name'] = btName
-        return myfileItem
 
 
 
