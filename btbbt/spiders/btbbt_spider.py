@@ -1,10 +1,11 @@
-import scrapy,re,time,random,uuid,json
+import scrapy,re,time,uuid,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
 from btbbt.bbsPostItem import bbsItem
 from btbbt.pipelines import redis_db, redis_data_dict
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
+    # 电影爬取
     name = 'btbbt' # 定义spider名称
 
     start_urls = [
@@ -46,8 +47,8 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         movidTableList = response.css('#threadlist table')
         for table in movidTableList:
             icoClass = table.css('span::attr("class")').extract_first()
-            # 滤除公告板块，实际
-            if icoClass.find('icon-post') >-1:
+            # 滤除公告板块，考虑到图片的多样性，凡是不是公告。全部爬取
+            if icoClass.find('icon-top') <0:
                 # 获取电影帖子url
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
@@ -80,8 +81,8 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
     # 获取电影详细信息，磁力链接地址，种子下载地址
     def movieParse(self,response):
         onlyId = uuid.uuid4().hex
-        movieTtpe = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
-        movieName = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
+        movieTtpeStr = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
+        movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         movieMagnet = ''
         movieEd2k = ''
         baiduWp = ''
@@ -97,20 +98,30 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                     movieImgs.append(myfileItem['file_name'])
                     yield myfileItem
 
+        # 文件路径处理
+        cusPath = [self.name]
+        movieTtpeList = movieTtpeStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
+        movieNameList = movieNameStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
+        for x in range(0, 4):
+            cusPath.append(movieTtpeList[x])
+        cusPath.append(movieNameList[1].replace('/','*'))
+
         # 附件列表
         movieFiles = []
-        fileList = response.css('div.attachlist a')
+        fileList = response.css('div.attachlist table tr')
         for item in fileList:
-            myfileItem = MyFileItem()
-            url = item.css('a::attr("href")').extract_first()
-            btName = item.css('a::text').extract_first()
-            # 种子文件下载地址
-            movieFileUrl = response.urljoin(url)
-            myfileItem = MyFileItem()
-            myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
-            myfileItem['file_name'] = btName
-            movieFiles.append(btName)
-            yield myfileItem
+            if item.css('a') is not None and len(item.css('a'))>0:
+                url = item.css('a::attr("href")').extract_first()
+                btName = item.css('a::text').extract_first()
+                btSize = item.css('td.grey::text').extract_fist() # 这里获取大小
+                myfileItem = MyFileItem()
+                # 种子文件下载地址
+                movieFileUrl = response.urljoin(url)
+                myfileItem = MyFileItem()
+                myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
+                myfileItem['file_name'] = '/'.join(cusPath)+'/'+btName
+                movieFiles.append(btName)
+                yield myfileItem
 
         movieText = response.css('p').extract()
         # 移除最后一个P元素
@@ -127,14 +138,14 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 movieEd2k = m[0]
 
         # 电影信息入库处理
-        if movieTtpe is not None:
+        if movieTtpeStr is not None:
             movieItem = movieInfo()
             movieItem['id'] = onlyId
             movieItem['spiderUrl'] = response.url
             # ,隔开的数组[年份,地区,类型,广告类型]
-            movieItem['type'] = movieTtpe.replace('][', ',').replace('[', '').replace(']', '')
+            movieItem['type'] = movieTtpeStr.replace('][', ',').replace('[', '').replace(']', '')
             # ,隔开的数组[下载类型,名称,文件类型/大小,字幕类型,分辨率]
-            movieItem['name'] = movieName.replace('][', ',').replace('[', '').replace(']', '')
+            movieItem['name'] = movieNameStr.replace('][', ',').replace('[', '').replace(']', '')
             movieItem['status'] = 1
             if movieMagnet is not None:
                 movieItem['downLoadUrl'] = movieMagnet

@@ -67,8 +67,8 @@ ROBOTSTXT_OBEY = True
 # 文件下载器中间件
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
-    'btbbt.pipelines.mysqlPipline': 2,
-    'btbbt.pipelines.bbsMysqlPipline': 3,
+    # 'btbbt.pipelines.mysqlPipline': 2,
+    # 'btbbt.pipelines.bbsMysqlPipline': 3,
 }
 # 文件存放地址
 FILES_STORE = r'C:\wamp\www\upload\data\attachment\forum'

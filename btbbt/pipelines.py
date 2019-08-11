@@ -13,7 +13,6 @@ from redis import Redis
 # scrapy 常用异常处理类
 from scrapy.exceptions import DropItem
 
-
 # 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
 # 如果当前链接被占用，那么会去链接db
 redis_db = Redis(host='d-flat.gangway.cn',port=6379,password='88888888',db=4)
