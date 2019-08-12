@@ -15,7 +15,7 @@ from scrapy.exceptions import DropItem
 
 # 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
 # 如果当前链接被占用，那么会去链接db
-redis_db = Redis(host='d-flat.gangway.cn',port=6379,password='88888888',db=4)
+redis_db = Redis(host='192.168.31.143',port=6379,password='',db=4)
 redis_data_dict = 'f_url'
 
 class BtbbtPipeline(object):
@@ -41,11 +41,11 @@ class btFilesPipeline(FilesPipeline):
 class mysqlPipline(object):
     def __init__(self):
         self.connect = pymysql.connect(
-            host='d-flat.crosssee.cn',# 数据库地址
-            port=3307,# 端口 注意是int类型
-            db='spidertest',# 数据库名称
+            host='192.168.31.143',# 数据库地址
+            port=3306,# 端口 注意是int类型
+            db='spider_movies',# 数据库名称
             user='root',# 用户名
-            passwd='88888888',# 用户密码
+            passwd='123456',# 用户密码
             charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
             use_unicode=True)
         # 进行数据库连接初始化
@@ -81,11 +81,11 @@ class mysqlPipline(object):
 class bbsMysqlPipline(object):
     def __init__(self):
         self.connect = pymysql.connect(
-            host='d-flat.crosssee.cn',# 数据库地址
-            port=3307,# 端口 注意是int类型
+            host='192.168.31.143',  # 数据库地址
+            port=3306,  # 端口 注意是int类型
             db='ultrax',# 数据库名称
             user='root',# 用户名
-            passwd='88888888',# 用户密码
+            passwd='123456',# 用户密码
             charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
             use_unicode=True)
         # 进行数据库连接初始化
@@ -93,71 +93,149 @@ class bbsMysqlPipline(object):
 
     def process_item(self, bbsItem, spider):
         try:
-            fId = '2'# 这里是板块ID，通过统一配置来进行插入
-
-            selectSQL = 'select max(pid)pid from pre_forum_post_tableid'
-            df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
-            onliyId = int(df['pid'].get_values()[0])+1
-
-            # pid表
-            self.cursor.execute(
-                """insert into pre_forum_post_tableid(pid)
-                           value (%s)""",
-                # 纯属python操作mysql知识，不熟悉请恶补
-                (onliyId,))
-            self.connect.commit()
-
-            self.cursor.execute(
-                """insert into pre_forum_thread(tid,fid,posttableid,typeid,sortid,readperm,price,author,authorid,subject,dateline,lastpost,lastposter,views,replies,displayorder,highlight,digest,rate,special,attachment,moderated,closed,stickreply,recommends,recommend_add,recommend_sub,heats,status,isgroup,favtimes,sharetimes,stamp,icon,pushedaid,cover,replycredit,relatebytag,maxposition,bgcolor,comments,hidden)
-                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",  # 纯属python操作mysql知识，不熟悉请恶补
-                (onliyId,fId,'0','0','0','0','0','admin','1',bbsItem['subject'],bbsItem['dataline'],bbsItem['dataline'],
-                'admin','1','0','0','0','0','0','0',
-                bbsItem['attachment'],
-                '0','0','0','0','0','0','0','32','0','0','0','-1','-1','0','0','0','0','1','','0','0',))
-            self.connect.commit()
-
-            # 帖子内容表
-            self.cursor.execute(
-                """insert into pre_forum_post(pid,fid,tid,first,author,authorid,subject,dateline,message,useip,port,invisible,anonymous,usesig,htmlon,bbcodeoff,smileyoff,parseurloff,attachment,rate,ratetimes,status,tags,comment,replycredit,position)
-                           value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                # 纯属python操作mysql知识，不熟悉请恶补
-                (onliyId,fId,onliyId,'1','admin','1',
-                bbsItem['subject'],bbsItem['dataline'],bbsItem['message'],
-                '127.0.0.1','8081','0','0','1','1','0','-1','0',
-                bbsItem['attachment'],
-                '0','0','0','','0','0','1',))
-            self.connect.commit()
-
-            if bbsItem['attachment'] is not None and bbsItem['attachment'] !='0':
-                # 最后一位，用于附件详情表存放
-                xStr = str(onliyId)
-                xStr = xStr[len(xStr) - 1:len(xStr)]
-                # 附件主表
-                self.cursor.execute(
-                    """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
-                               value (%s, %s, %s, %s, %s, %s)""",
-                    # 纯属python操作mysql知识，不熟悉请恶补
-                    (onliyId,onliyId,onliyId,'1',xStr,'0',))
-                self.connect.commit()
-                # 附件内容表
-                insert_sql = "INSERT INTO pre_forum_attachment_"+xStr+"(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                self.cursor.execute(insert_sql,
-                    # 纯属python操作mysql知识，不熟悉请恶补
-                    # +xStr
-                    (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'],'1000',bbsItem['attachmentUrl'],'0','','0','0','0','0','0','0',))
-                self.connect.commit()
-
-
-            # 更新板块主题数目，今日发帖数等
-            lastpost = ['test',bbsItem['subject'],bbsItem['dataline'],'admin']
-            lastpostStr = '	'.join(lastpost)
-            updateForumSql = "update pre_forum_forum set threads = threads +1 , posts = posts +1 , todayposts = todayposts +1 , lastpost = '"+lastpostStr+"' where fid = %s "
-            self.cursor.execute(updateForumSql,(fId,))
-            self.connect.commit()
+            # 这里需要一个参数做判断，是发帖，还是回帖。这样就不会重复进行数据库链接
+            bbsType = bbsItem['bbsType']
+            # 默认是新贴
+            if bbsType is None or bbsType == 'new':
+                # 返回了tid用于回帖
+                bbsItem = self.bbsNewPosts(self,bbsItem)
+            else:
+                self.bbsReplies(self,bbsItem)
         except Exception as e:
             e
             self.connect.rollback()
         return bbsItem # 必须返回
+
+    # 这里是发布新贴
+    def bbsNewPosts(self,bbsItem):
+        fId = bbsItem['fId']  # 这里是板块ID，通过统一配置来进行插入
+        selectSQL = 'select max(pid)pid from pre_forum_post_tableid'
+        df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
+        if df['pid'].get_values()[0] is None:
+            onliyId = '1'
+        else:
+            onliyId = int(df['pid'].get_values()[0]) + 1
+        # pid表
+        self.cursor.execute(
+            """insert into pre_forum_post_tableid(pid)
+                       value (%s)""",
+            (onliyId,))
+        self.connect.commit()
+
+        # 帖子主表
+        self.cursor.execute(
+            """insert into pre_forum_thread(tid,fid,posttableid,typeid,sortid,readperm,price,author,authorid,subject,dateline,lastpost,lastposter,views,replies,displayorder,highlight,digest,rate,special,attachment,moderated,closed,stickreply,recommends,recommend_add,recommend_sub,heats,status,isgroup,favtimes,sharetimes,stamp,icon,pushedaid,cover,replycredit,relatebytag,maxposition,bgcolor,comments,hidden)
+                       value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (onliyId, fId, '0', '0', '0', '0', '0', 'admin', '1', bbsItem['subject'], bbsItem['dataline'],
+             bbsItem['dataline'],
+             'admin', '1', '0', '0', '0', '0', '0', '0',
+             bbsItem['attachment'],
+             '0', '0', '0', '0', '0', '0', '0', '32', '0', '0', '0', '-1', '-1', '0', '0', '0', '0', '1', '', '0',
+             '0',))
+        self.connect.commit()
+
+        # 帖子内容表
+        self.cursor.execute(
+            """insert into pre_forum_post(pid,fid,tid,first,author,authorid,subject,dateline,message,useip,port,invisible,anonymous,usesig,htmlon,bbcodeoff,smileyoff,parseurloff,attachment,rate,ratetimes,status,tags,comment,replycredit,position)
+                       value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            # 纯属python操作mysql知识，不熟悉请恶补
+            (onliyId, fId, onliyId, '1', 'admin', '1',
+             bbsItem['subject'], bbsItem['dataline'], bbsItem['message'],
+             '127.0.0.1', '8081', '0', '0', '1', '1', '0', '-1', '0',
+             bbsItem['attachment'],
+             '0', '0', '0', '', '0', '0', '1',))
+        self.connect.commit()
+
+        if bbsItem['attachment'] is not None and bbsItem['attachment'] != '0':
+            # 最后一位，用于附件详情表存放
+            xStr = str(onliyId)
+            xStr = xStr[len(xStr) - 1:len(xStr)]
+            # 附件主表
+            self.cursor.execute(
+                """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
+                           value (%s, %s, %s, %s, %s, %s)""",
+                # 纯属python操作mysql知识，不熟悉请恶补
+                (onliyId, onliyId, onliyId, '1', xStr, '0',))
+            self.connect.commit()
+            # 附件内容表
+            insert_sql = "INSERT INTO pre_forum_attachment_" + xStr + "(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            self.cursor.execute(insert_sql,
+                                # 纯属python操作mysql知识，不熟悉请恶补
+                                # +xStr
+                                (onliyId, onliyId, onliyId, onliyId, bbsItem['dataline'], bbsItem['fileName'], '1000',
+                                 bbsItem['attachmentUrl'], '0', '', '0', '0', '0', '0', '0', '0',))
+            self.connect.commit()
+
+        # 更新板块主题数目，今日发帖数等
+        lastpost = ['test', bbsItem['subject'], bbsItem['dataline'], 'admin']
+        lastpostStr = '	'.join(lastpost)
+        updateForumSql = "update pre_forum_forum set threads = threads +1 , posts = posts +1 , todayposts = todayposts +1 , lastpost = '" + lastpostStr + "' where fid = %s "
+        self.cursor.execute(updateForumSql, (fId,))
+        self.connect.commit()
+        # 返回，如果有需要回帖，则需要
+        bbsItem['tId'] = onliyId
+        return bbsItem
+
+
+    def bbsReplies(self,bbsItem):
+        fId = bbsItem['fId']  # 这里是板块ID，通过统一配置来进行插入
+        tId = bbsItem['tId']  # 这里是父级ID
+        selectSQL = 'select max(pid)pid from pre_forum_post_tableid'
+        df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
+        if df['pid'].get_values()[0] is None:
+            onliyId = '1'
+        else:
+            onliyId = int(df['pid'].get_values()[0]) + 1
+        # pid表
+        self.cursor.execute(
+            """insert into pre_forum_post_tableid(pid)
+                       value (%s)""",
+            (onliyId,))
+        self.connect.commit()
+
+        selectSQL = 'select max(position)position from pre_forum_post where tid = :tid'
+        bbsMainPosts = pd.read_sql(sql=selectSQL, con=self.connect, params={'tid': tId})
+        '''
+        # 不知道与上面这个查法，那个效率高。预留
+        selectSQL = 'select * from pre_forum_thread where tid = :tid and fid = :fid'
+        bbsMainThread = pd.read_sql(sql=selectSQL, con=self.connect, params={'tid': tId,'fid':fId})
+        '''
+
+        # 回复内容表
+        self.cursor.execute(
+            """insert into pre_forum_post(pid,fid,tid,first,author,authorid,subject,dateline,message,useip,port,invisible,anonymous,usesig,htmlon,bbcodeoff,smileyoff,parseurloff,attachment,rate,ratetimes,status,tags,comment,replycredit,position)
+                       value (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            # 纯属python操作mysql知识，不熟悉请恶补
+            (onliyId, fId, tId, '0', 'admin', '1',
+             '', bbsItem['dataline'], bbsItem['message'],
+             '127.0.0.1', '8081', '0', '0', '1', '1', '-1', '-1', '0',
+             bbsItem['attachment'],
+             '0', '0', '1024', '0', '0', '0', int(bbsMainPosts['position'].get_values()[0])+1,))
+        self.connect.commit()
+
+        # 附件处理
+        if bbsItem['attachment'] is not None and bbsItem['attachment'] != '0':
+            # 最后一位，用于附件详情表存放
+            xStr = str(onliyId)
+            xStr = xStr[len(xStr) - 1:len(xStr)]
+            # 附件主表
+            self.cursor.execute(
+                """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
+                           value (%s, %s, %s, %s, %s, %s)""",
+                (onliyId, tId, onliyId, '1', xStr, '0',))
+            self.connect.commit()
+            # 附件内容表
+            insert_sql = "INSERT INTO pre_forum_attachment_" + xStr + "(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            self.cursor.execute(insert_sql,
+                                # 纯属python操作mysql知识，不熟悉请恶补
+                                # +xStr
+                                (onliyId, tId, onliyId, '1', bbsItem['dataline'], bbsItem['fileName'], '1000',
+                                 bbsItem['attachmentUrl'], '0', '', '0', '0', '0', '0', '0', '0',))
+            self.connect.commit()
+        # 更新主表回复的部分内容
+        updateForumSql = "update pre_forum_thread set replies = replies +1 , heats = '1' , maxposition = maxposition +1 where tid = %s and fid = %s"
+        self.cursor.execute(updateForumSql, (tId,fId,))
+        self.connect.commit()
 
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):

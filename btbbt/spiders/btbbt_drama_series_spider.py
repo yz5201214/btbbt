@@ -1,13 +1,17 @@
 # 剧集爬取
-import scrapy,uuid,time
+import scrapy,uuid,time,json
 from btbbt.myFileItem import MyFileItem
+from btbbt.movieInfoItem import movieInfo
+from btbbt.bbsPostItem import bbsItem
 
 # 这了一定要注意Spider 的首字母大写
 class btbbtDramaSeriesSpider(scrapy.Spider):
     name = 'drama'
+    '''
     custom_settings = {
         'ITEM_PIPELINES':{'btbbt.pipelines.btFilesPipeline': 1}
     }
+    '''
     start_urls = [
         'http://btbtt.org/forum-index-fid-950.htm',# 剧集首页
     ]
@@ -70,9 +74,9 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
         movieNameList = movieNameStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
         for x in range(0,4):
             cusPath.append(movieTtpeList[x])
-        cusPath.append(movieNameList[1].replace('/','*'))
+        cusPath.append(movieNameList[1].replace('/','-'))
 
-
+        movieImgs = []
         # 详细信息中的图片文件下载，按照原路径保存
         if len(response.css('p img')) > 0:
             for imgList in response.css('p img'):
@@ -80,6 +84,7 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                 if imgList.css('img::attr("src")').extract_first().find('http') == -1:
                     myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
                     myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
+                    movieImgs.append(myfileItem['file_name'])
                     yield myfileItem
 
         '''
@@ -88,6 +93,7 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
         '''
         mainPostAttach = response.css('#body table:nth-child(2) div.attachlist')
         allAttachLen = len(response.css('div.attachlist'))
+        movieFiles = []
         if mainPostAttach is not None and len(mainPostAttach) ==1:
             allAttachLen = allAttachLen -1
             for tableTrItem in mainPostAttach.css('table tr'):
@@ -101,7 +107,43 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                     myfileItem = MyFileItem()
                     myfileItem['file_urls'] = [movieFileUrl.replace('dialog', 'download')]
                     myfileItem['file_name'] = '/'.join(cusPath)+'/'+btName
+                    movieFiles.append(myfileItem['file_name'])
                     yield myfileItem
+
+        movieText = response.css('p').extract()
+        # 移除最后一个P元素
+        movieText.pop()
+
+        # 剧集信息入库处理
+        if movieTtpeStr is not None:
+            movieItem = movieInfo()
+            movieItem['id'] = onlyId
+            movieItem['spiderUrl'] = response.url
+            # ,隔开的数组[年份,地区,类型,广告类型]
+            movieItem['type'] = movieTtpeStr.replace('][', ',').replace('[', '').replace(']', '')
+            # ,隔开的数组[下载类型,名称,文件类型/大小,字幕类型,分辨率]
+            movieItem['name'] = movieNameStr.replace('][', ',').replace('[', '').replace(']', '')
+            movieItem['status'] = 2
+            movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            movieItem['allInfo'] = "".join(movieText).replace('<img src="/upload/','<img src="http://localhost:8081/upload/data/attachment/forum/upload/')
+            if len(movieImgs) > 0:
+                movieItem['imgs'] = json.dumps(movieImgs)
+            yield movieItem
+            # 然后开始bbs入库
+            bbs = bbsItem()
+            bbs['fId'] = '36'  # 这里指定板块ID,请自行根据pre_forum_forum 表的数据调整
+            bbs['bbsType'] = 'new' # 新帖发帖
+            bbs['subject'] = movieItem['type'] + movieItem['name']
+            bbs['dataline'] = str(int(time.time()))
+            bbs['attachment'] = str(len(movieFiles))
+            bbs['message'] = movieItem['allInfo']
+            if len(movieFiles) > 0:
+                bbs['fileName'] = movieFiles[0]
+                bbs['attachmentUrl'] = movieFiles[0]
+            # 这里会返回主贴的tId，如果有回帖信息，是需要进行数据关联的
+            mainBbs = yield bbs
+
         '''
             剔除主贴的附件列表，如果附件div还有的情况下，从第三个table开始盘回帖内容，看谁有，下载谁的，主要是为了区别同剧集，不同字幕组，分辨率的情况
         '''
@@ -111,6 +153,7 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
             for x in range(3,len(messageTableList)):
                 attach = messageTableList[x].css('div.attachlist')
                 if attach is not None and len(attach) ==1:
+                    movieFiles = []
                     for tableTrItem in attach.css('table tr'):
                         if tableTrItem.css('a') is not None and len(tableTrItem.css('a')) > 0:
                             # 这部分的附件内容标题说明
@@ -127,5 +170,22 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                                 myfileItem = MyFileItem()
                                 myfileItem['file_urls'] = [movieFileUrl.replace('dialog', 'download')]
                                 myfileItem['file_name'] = '/'.join(cusPath) + '/'+mssageTitle+'/' + btName
+                                movieFiles.append(myfileItem['file_name'])
                                 yield myfileItem
+                    # 然后开始bbs回帖入库
+                    bbs = bbsItem()
+                    bbs['tId'] = mainBbs['tId']
+                    bbs['fId'] = '36'  # 这里指定板块ID,请自行根据pre_forum_forum 表的数据调整
+                    bbs['bbsType'] = 'Replies'  # 回帖
+                    # bbs['subject'] = movieItem['type'] + movieItem['name']
+                    bbs['dataline'] = str(int(time.time()))
+                    bbs['attachment'] = str(len(movieFiles))
+                    bbs['message'] = ''.join(messageTableList[x].css('p').extract())
+                    if len(movieFiles) > 0:
+                        bbs['fileName'] = movieFiles[0]
+                        bbs['attachmentUrl'] = movieFiles[0]
+                    # 这里会返回主贴的tId，如果有回帖信息，是需要进行数据关联的
+                    yield bbs
+
+
 

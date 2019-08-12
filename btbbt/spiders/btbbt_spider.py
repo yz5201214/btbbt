@@ -104,7 +104,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         movieNameList = movieNameStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
         for x in range(0, 4):
             cusPath.append(movieTtpeList[x])
-        cusPath.append(movieNameList[1].replace('/','*'))
+        cusPath.append(movieNameList[1].replace('/','-'))
 
         # 附件列表
         movieFiles = []
@@ -113,15 +113,16 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             if item.css('a') is not None and len(item.css('a'))>0:
                 url = item.css('a::attr("href")').extract_first()
                 btName = item.css('a::text').extract_first()
-                btSize = item.css('td.grey::text').extract_fist() # 这里获取大小
+                # btSize = item.css('td.grey::text').extract_fist() # 这里获取大小
                 myfileItem = MyFileItem()
-                # 种子文件下载地址
-                movieFileUrl = response.urljoin(url)
-                myfileItem = MyFileItem()
-                myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
-                myfileItem['file_name'] = '/'.join(cusPath)+'/'+btName
-                movieFiles.append(btName)
-                yield myfileItem
+                # 种子文件下载地址 ，其他文件下载太慢，导致下载失败，可能要处理下
+                if btName.find('.torrent') >= 0:
+                    movieFileUrl = response.urljoin(url)
+                    myfileItem = MyFileItem()
+                    myfileItem['file_urls'] = [movieFileUrl.replace('dialog','download')]
+                    myfileItem['file_name'] = '/'.join(cusPath)+'/'+btName
+                    movieFiles.append(myfileItem['file_name'])
+                    yield myfileItem
 
         movieText = response.css('p').extract()
         # 移除最后一个P元素
@@ -162,6 +163,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
 
             # 然后开始bbs入库
             bbs = bbsItem()
+            bbs['fId'] = '2' # 这里指定板块ID
             bbs['subject'] = movieItem['type'] + movieItem['name']
             bbs['dataline'] = str(int(time.time()))
             bbs['attachment'] = str(len(movieFiles))
