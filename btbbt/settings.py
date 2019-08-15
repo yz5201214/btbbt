@@ -8,11 +8,14 @@
 #     https://docs.scrapy.org/en/latest/topics/settings.html
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+import datetime
 
 BOT_NAME = 'btbbt'
 
 SPIDER_MODULES = ['btbbt.spiders']
 NEWSPIDER_MODULE = 'btbbt.spiders'
+
+# 日志配置
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -67,13 +70,13 @@ ROBOTSTXT_OBEY = True
 # 文件下载器中间件
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
-    'btbbt.pipelines.mysqlPipline': 2,
-    'btbbt.pipelines.bbsMysqlPipline': 3,
+    'btbbt.pipelines.bbsMysqlPipline': 2,
 }
 # 文件存放地址
-FILES_STORE = r'C:\wamp\www\upload\data\attachment\forum'
+FILES_STORE = r'K:\\'
 # 文件下载有效期，避免下载重复文件，90内下载过不会重复下载
 FILES_EXPIRES = 10
+MY_URL='http://192.168.31.143:8081'
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
