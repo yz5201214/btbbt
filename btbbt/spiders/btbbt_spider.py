@@ -1,7 +1,7 @@
 import scrapy,re,time,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
-from btbbt.pipelines import redis_db, redis_data_dict
+from btbbt.pipelines import redis_db, redis_data_btbbt
 from scrapy.conf import settings
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
@@ -37,7 +37,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         :return: 必须返回
         ::attr("href")
         '''
-        if redis_db.hget(redis_data_dict,'movieSize') is not None:
+        if redis_db.hget(redis_data_btbbt,'movieSize') is not None:
             # 初始化第0页开始
             if redis_db.get('pageNum') is None:
                 num = 0
@@ -54,10 +54,10 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
-                    # 利用redis去重，在redis_data_dict中是否已经存在该URL，如果存在不爬取
-                    if redis_db.hexists(redis_data_dict, realUrl):
+                    # 电影利用redis去重，但是剧集有可能是更新，还是需要比对处理
+                    if redis_db.hexists(redis_data_btbbt, realUrl):
                         # 如果存在，直接剔除该item，但是这里有个问题，如果我是线程执行，那么redis的生存周期怎么设置
-                        self.log('该电影已经入库，无需重复入库 %s' % realUrl)
+                        print('该电影已经入库，无需重复入库 %s' % realUrl)
                         break
                     yield scrapy.Request(realUrl,callback=self.movieParse)
         '''
@@ -86,7 +86,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         onlyId = response.url.split('/')[-1]
         movieTtpeStr = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         # 电影名称有时候会出现'号。需要替换成中文的
-        movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','').replace('\'','”').replace('"','”')
+        movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t','').replace('\r','').replace('\n','').replace('\'','”').replace('"','”').replace(',','，')
         movieImgs = []
         # 详细信息中的图片文件下载，按照原路径保存
         if len(response.css('p img')) > 0:

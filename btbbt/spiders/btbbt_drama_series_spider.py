@@ -2,6 +2,7 @@
 import scrapy,time,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
+from btbbt.pipelines import redis_db,redis_data_btbbt
 
 # 这了一定要注意Spider 的首字母大写
 class btbbtDramaSeriesSpider(scrapy.Spider):
@@ -36,14 +37,6 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                 allMovieUrlList = table.css('a.subject_link')
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
-
-                    '''
-                    # 利用redis去重，在redis_data_dict中是否已经存在该URL，如果存在不爬取
-                    if redis_db.hexists(redis_data_dict, realUrl):
-                        # 如果存在，直接剔除该item，但是这里有个问题，如果我是线程执行，那么redis的生存周期怎么设置
-                        self.log('该电影已经入库，无需重复入库 %s' % realUrl)
-                        break
-                    '''
                     yield scrapy.Request(realUrl,callback=self.dramaParse)
         '''
         已经测试可
@@ -66,9 +59,8 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
     def dramaParse(self,response):
         onlyId = response.url.split('/')[-1]
         movieTtpeStr = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t', '').replace('\r','').replace('\n', '')
-        movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t', '').replace('\r','').replace('\n', '')
+        movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t', '').replace('\r','').replace('\n', '').replace('\'','”').replace('"','”').replace(',','，')
         movieTtpeList = movieTtpeStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
-        movieNameList = movieNameStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
         # 文件存放路径 spider名称/年份/最后详细地址
         cusPath = [self.name,movieTtpeList[0],response.url.split('/')[-1]]
         movieImgs = []

@@ -11,13 +11,14 @@ import pymysql.cursors,scrapy,json,time
 import pandas as pd
 # 要想使用redis模块，需要导入的不是redis ，而是redispy，需要py一下才行
 from redis import Redis
+import numpy
 # scrapy 常用异常处理类
 from scrapy.exceptions import DropItem
 
 # 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
 # 如果当前链接被占用，那么会去链接db
 redis_db = Redis(host='192.168.31.143',port=6379,password='',db=4)
-redis_data_dict = 'f_url'
+redis_data_btbbt = 'btbbt_cache'
 
 class BtbbtPipeline(object):
     def process_item(self, item, spider):
@@ -32,6 +33,7 @@ class btFilesPipeline(FilesPipeline):
         # return join(basename(dirname(path)),basename(path))
         # return '%s' % (basename(item['file_name']))
         return '%s' % item['file_name']
+
     # 只能通过这个方法进行item传递
     def get_media_requests(self,item , info):
         # 只有文件下载的时候才需要
@@ -39,31 +41,6 @@ class btFilesPipeline(FilesPipeline):
             for fileUrl in item['file_urls']:
                 yield scrapy.Request(fileUrl, meta={'item': item})
         return item
-
-class mysqlPipline(object):
-    def __init__(self):
-        self.connect = pymysql.connect(
-            host='192.168.31.143',# 数据库地址
-            port=3306,# 端口 注意是int类型
-            db='spider_movies',# 数据库名称
-            user='root',# 用户名
-            passwd='123456',# 用户密码
-            charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
-            use_unicode=True)
-        # 进行数据库连接初始化
-        self.cursor = self.connect.cursor()
-        # 没错清理全部的key，重新进行匹配，保证数据的时效性
-        redis_db.flushdb()
-        # 这里是过期时间，过期时间单位：秒
-        # redis_db.expire(redis_data_dict,20)
-        if redis_db.hlen(redis_data_dict) == 0:
-            selectSQL = 'select F_SPIDER_URL from F_M_INFO'
-            df = pd.read_sql(selectSQL,self.connect)# 读myql数据库
-            for url in df['F_SPIDER_URL'].get_values():
-                # 数据库所有的值全部加入，用于去重处理
-                # redis_data_dict 指定字典，key = url ,value = 0，这里要比对的实际是请求地址，那么拿url做key即可
-                redis_db.hset(redis_data_dict,url,0)
-                redis_db.hset(redis_data_dict,'movieSize',len(df))
 
 class bbsMysqlPipline(object):
     def __init__(self):
@@ -77,20 +54,174 @@ class bbsMysqlPipline(object):
             use_unicode=True)
         # 进行数据库连接初始化
         self.cursor = self.connect.cursor()
+        # 初始化的时候，清空所有缓存，保证数据的时效性
+        redis_db.flushdb()
+        if redis_db.hlen(redis_data_btbbt) == 0:
+            selectSQL = 'select * from gt_m_main_info'
+            df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
+            for url in df['F_SPIDER_URL'].get_values():
+                # 数据库所有的值全部加入，用于去重处理
+                # redis_data_btbbt 指定字典，key = url ,value = 0，这里要比对的实际是请求地址，那么拿url做key即可
+                redis_db.hset(redis_data_btbbt, url, 0)
+            # 增量爬取，还是初始化爬取
+            # df['F_TYPE'].get_values() 是<class 'numpy.ndarray'>对象，这里指的琢磨下
+            if str(df['F_TYPE'].get_values()).find('2')>=0:
+                redis_db.hset(redis_data_btbbt, 'dramaSize', 'True')
+            if str(df['F_TYPE'].get_values()).find('1')>=0:
+                redis_db.hset(redis_data_btbbt, 'movieSize', 'True')
 
     def process_item(self, item, spider):
         if isinstance(item, movieInfo):
-            # 主贴
-            return_dict = self.bbsNewPosts(item)
-            if return_dict is not None:
-                self.gtMianAndReInfo(item,return_dict)
-                # 回帖集合
-                relinesList = json.loads(item['bbsRelinesListJson'])
-                if len(relinesList)>0:
-                    self.bbsReplies(relinesList,item['spiderUrl'],item['bbsFid'],return_dict['tid'])
+            if item['type'] =='2' and redis_db.hexists(redis_data_btbbt, item['spiderUrl']):
+                # 这里是剧集更新操作
+                self.dramaUpdate(item)
             else:
-                print('主贴插入异常警告')
+                # 主贴
+                return_dict = self.bbsNewPosts(item)
+                if return_dict is not None:
+                    self.gtMianAndReInfo(item,return_dict)
+                    # 回帖集合
+                    relinesList = json.loads(item['bbsRelinesListJson'])
+                    if len(relinesList)>0:
+                        self.bbsReplies(relinesList,item['spiderUrl'],item['bbsFid'],return_dict['tid'])
+                else:
+                    print('主贴插入异常警告')
         return item
+
+    def dramaUpdate(self,movieItem):
+        spiderUrl = movieItem['spiderUrl']
+        newFileList = json.loads(movieItem['filestr'])
+        dataLine = str(int(time.time()))
+        if len(movieItem['name']) > 50:
+            subjectStr = movieItem['name'][0:40] + "..."
+        else:
+            subjectStr = movieItem['name']
+        # 只更新附件信息，如果没有，不做任何更新处理
+        if len(newFileList)>0:
+            try:
+                # 这里是主贴的操作
+                getGtMainInfoSql = 'select * from gt_m_main_info where F_SPIDER_URL = %s and F_TYPE = %s'
+                self.cursor.execute(getGtMainInfoSql,(spiderUrl,movieItem['type'],))
+                mainData = self.cursor.fetchone()
+                F_B_TID = mainData[9]
+                F_B_PID = mainData[10]
+                F_B_AID = mainData[11]
+                fileStr = mainData[8]
+                oldFileList = json.loads(fileStr) # 数据库附件记录
+                # incrementList = list(set(newFileList).difference(set(oldFileList)))# 新旧比对的附件增量
+                # 当新旧附件个数不一样的时候，需要找出差集，上面这种list找差集，只能用在简单的list集合，对于list中是tupl的不行，因为list不能被哈希，tuple可以
+                incrementList = []
+                if len(newFileList) != len(oldFileList):
+                    for newItem in newFileList:
+                        # 在老附件里面找不到，作为增量附件
+                        if fileStr.find(newItem['file_name']) <0:
+                            incrementList.append(newItem)
+                if len(incrementList)>0:
+                    # 更新主贴的标题，最后修改时间，及附件个数
+                    updateBBSThreadSql = "update pre_forum_thread set subject = '%s', lastpost = '%s', views = views +1 , attachment = attachment + '%d'" % (subjectStr,dataLine,len(incrementList),) +" where tid = %s and fid = %s"
+                    print('主贴开始更新，更新的帖子，更新语句是:%s' % updateBBSThreadSql)
+                    self.cursor.execute(updateBBSThreadSql,
+                                        (F_B_TID,movieItem['bbsFid'],))
+                    # 因为是主贴附件更新，所以需要更新主贴的附件详情，及主贴内容
+                    attachList = []
+                    for fileItem in incrementList:
+                        xStr = F_B_TID[-1]
+                        # 附件主表
+                        self.cursor.execute(
+                            """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
+                                       value (%s, %s, %s, %s, %s, %s)""",
+                            ('0', F_B_TID, F_B_PID, '1',xStr , '0',))
+                        self.connect.commit()
+                        fileAid = self.cursor.lastrowid
+                        # 附件内容表
+                        insert_sql = "INSERT INTO pre_forum_attachment_" + xStr + "(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                        self.cursor.execute(insert_sql,
+                                            # 纯属python操作mysql知识，不熟悉请恶补
+                                            # +xStr
+                                            (fileAid, F_B_TID, F_B_PID, '1', dataLine, fileItem['file_name'],
+                                             int(float(fileItem['file_size'][0:-1])),
+                                             fileItem['file_url'], '0', '', '0', '0', '0', '0', '0', '0',))
+                        attachList.append(str(fileAid))
+                    attachList = attachList + json.loads(F_B_AID)
+                    mainAllFileList = []
+                    for mainA in attachList:
+                        mainAllFileList.append('[attach]' + str(mainA) + '[/attach]<br>')
+                    # 更新主贴内容
+                    updateBBSPostSql = "update pre_forum_post set subject = '%s' ,dateline = '%s' ,message = concat(message,'%s') , attachment = attachment + '%d'" % (subjectStr,dataLine,''.join(mainAllFileList),len(incrementList),) +"where pid = %s and fid = %s and tid = %s"
+                    self.cursor.execute(updateBBSPostSql,
+                                        (F_B_PID, movieItem['bbsFid'],F_B_TID,))
+                    # 更新自建主贴内容
+                    updateGtMainSql = "update gt_m_main_info set f_edit_time = '%s' ,f_files = '%s' , f_b_aid = '%s'" % (movieItem['editTime'],movieItem['filestr'],json.dumps(attachList,ensure_ascii=False),) + "where f_spider_url = %s"
+                    self.cursor.execute(updateGtMainSql,
+                                        (spiderUrl,))
+                    self.connect.commit()
+            except Exception as e:
+                print('剧集主贴更新异常对象 %s ，异常信息是 %s' % (movieItem,e,))
+                self.connect.rollback()
+                self.connect.commit()
+
+        try:
+            # 回帖更新操作
+            relinesList = json.loads(movieItem['bbsRelinesListJson'])
+            if len(relinesList) > 0:
+                for relinesItem in relinesList:
+                    getGtReInfoSql = 'select * from gt_m_replines_info where f_m_id = %s and f_r_id = %s'
+                    self.cursor.execute(getGtReInfoSql, (spiderUrl,relinesItem['id'],))
+                    relinesData = self.cursor.fetchone()
+                    oldReInfo = relinesData[2] # 原回帖内容
+                    reFileStr = relinesData[3]
+                    oldReFileList = json.loads(reFileStr) #原回帖附件集合
+                    newReFileList = json.loads(relinesItem['filestr']) # 新的附件集合
+                    newReInfo = relinesItem['allInfo'] # 新的回帖内容
+                    reIncrementList = []
+                    if len(newReFileList) != len(oldReFileList):
+                        for newItem in newReFileList:
+                            # 在老附件里面找不到，作为增量附件
+                            if reFileStr.find(newItem['file_name']) < 0:
+                                reIncrementList.append(newItem)
+                    F_B_TID = relinesData[4]
+                    F_B_PID = relinesData[5]
+                    F_B_AID = relinesData[6]
+                    reAttachList = []
+                    for reFileItem in reIncrementList:
+                        xStr = F_B_TID[-1]
+                        # 附件主表
+                        self.cursor.execute(
+                            """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
+                                       value (%s, %s, %s, %s, %s, %s)""",
+                            ('0', F_B_TID, F_B_PID, '1', xStr, '0',))
+                        self.connect.commit()
+                        fileAid = self.cursor.lastrowid
+                        # 附件内容表
+                        insert_sql = "INSERT INTO pre_forum_attachment_" + xStr + "(aid, tid, pid, uid, dateline,filename,filesize,attachment,remote,description,readperm,price,isimage,width,thumb,picid) VALUE (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                        self.cursor.execute(insert_sql,
+                                            # 纯属python操作mysql知识，不熟悉请恶补
+                                            # +xStr
+                                            (fileAid, F_B_TID, F_B_PID, '1', dataLine,
+                                             reFileItem['file_name'],
+                                             int(float(reFileItem['file_size'][0:-1])),
+                                             reFileItem['file_url'], '0', '', '0', '0', '0', '0', '0', '0',))
+                        reAttachList.append(str(fileAid))
+                        self.connect.commit()
+                    # 新老附件合集
+                    reAttachList = reAttachList + json.loads(F_B_AID)
+                    reAllFileList = []
+                    for reA in reAttachList:
+                        reAllFileList.append('[attach]' + str(reA) + '[/attach]<br>')
+                    if len(oldReInfo) != len(newReInfo) or len(reIncrementList)>0: # 理论上来说，字符数/附件个数的调整都算更新
+                        print('回帖开始更新，主贴ID是: %s，更新的回帖是：%s' % (spiderUrl,relinesData,))
+                        updateRePostSql = "update pre_forum_post set message = '%s' , attachment = attachment + '%d'" % (newReInfo+''.join(reAllFileList),len(reIncrementList),) + "where pid = %s and fid = %s and tid = %s"
+                        self.cursor.execute(updateRePostSql,
+                                            (F_B_PID, movieItem['bbsFid'], F_B_TID,))
+                        # 更新自建表
+                        updateGtReplinesSql = "update gt_m_replines_info set f_r_info = '%s' ,f_r_files = '%s' ,f_b_aid = '%s'" % (newReInfo,relinesItem['filestr'],json.dumps(reAttachList,ensure_ascii=False)) + "where f_r_id = %s and f_m_id = %s"
+                        self.cursor.execute(updateGtReplinesSql,
+                                            (relinesItem['id'],spiderUrl,))
+                    self.connect.commit()
+        except Exception as e:
+            print('剧集回帖更新异常对象 %s ，异常信息是 %s' % (movieItem,e,))
+            self.connect.rollback()
+            self.connect.commit()
 
     def gtMianAndReInfo(self,movieItem,return_dict):
         try:
@@ -103,7 +234,7 @@ class bbsMysqlPipline(object):
         except Exception as e:
             self.connect.rollback();
             self.connect.commit()
-            print('自建表信息---写入异常，错误信息 %s' % e)
+            print('自建表主表写入异常，异常对象 %s，错误信息 %s' % (movieItem,e,))
 
     # 这里是发布新贴
     def bbsNewPosts(self,movieItem):
@@ -112,7 +243,7 @@ class bbsMysqlPipline(object):
         dataLine = str(int(time.time()))
         try:
             if len(movieItem['name'])>50:
-                subjectStr = movieItem['name'][0:40]+"..."
+                subjectStr = movieItem['name'][0:30]+"..."
             else:
                 subjectStr = movieItem['name']
             # pid表
@@ -177,8 +308,7 @@ class bbsMysqlPipline(object):
             }
             return return_dict
         except Exception as e:
-            print('新贴表插入异常对象 %s' % movieItem)
-            print('新贴异常 %s' % e)
+            print('新贴表插入异常对象 %s ,异常内容 %s' % (movieItem,e,))
             self.connect.rollback()
             self.connect.commit()
         return None
@@ -231,8 +361,7 @@ class bbsMysqlPipline(object):
                                      tId,onliyId,json.dumps(attachList,ensure_ascii=False).replace('[attach]','').replace('[/attach]<br>',''),))
                 self.connect.commit()
             except Exception as e:
-                print('回贴表插入异常对象 %s ' % replinesItem)
-                print('回贴表插入异常，错误信息 %s' % e)
+                print('回贴表插入异常对象 %s ，异常信息：%s ' % (replinesItem,e,))
                 self.connect.rollback()
                 self.connect.commit()
 
