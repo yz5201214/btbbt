@@ -2,13 +2,13 @@ import scrapy,re,time,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
 from btbbt.pipelines import redis_db, redis_data_btbbt
-from scrapy.conf import settings
+from scrapy.utils.project import get_project_settings
 
 class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
+    settings = get_project_settings()
     bbsTid = '2' # 论坛所属板块ID
     # 电影爬取
     name = 'btbbt' # 定义spider名称
-
     start_urls = [
         # http://btbtt.org/forum-index-fid-951.htm
         'http://btbtt.org/forum-index-fid-951.htm',
@@ -82,7 +82,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
     # 获取电影详细信息，磁力链接地址，种子下载地址
     def movieParse(self,response):
         # 配置文件中我的域名
-        my_url = settings.get('MY_URL')
+        my_url = self.settings.get('MY_URL')
         onlyId = response.url.split('/')[-1]
         movieTtpeStr = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t','').replace('\r','').replace('\n','')
         # 电影名称有时候会出现'号。需要替换成中文的

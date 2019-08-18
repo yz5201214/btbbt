@@ -70,10 +70,10 @@ ROBOTSTXT_OBEY = True
 # 文件下载器中间件
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
-    'btbbt.pipelines.bbsMysqlPipline': 2,
+    # 'btbbt.pipelines.bbsMysqlPipline': 2,
 }
 # 文件存放地址
-FILES_STORE = r'K:\\'
+FILES_STORE = r'D:\\'
 # 文件下载有效期，避免下载重复文件，90内下载过不会重复下载
 FILES_EXPIRES = 10
 MY_URL='http://192.168.31.143:8081'

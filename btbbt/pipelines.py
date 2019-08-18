@@ -17,7 +17,7 @@ from scrapy.exceptions import DropItem
 
 # 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
 # 如果当前链接被占用，那么会去链接db
-redis_db = Redis(host='192.168.31.143',port=6379,password='',db=4)
+redis_db = Redis(host='dev.kuituoshi.com',port=6379,password='88888888',db=4)
 redis_data_btbbt = 'btbbt_cache'
 
 class BtbbtPipeline(object):
@@ -45,17 +45,46 @@ class btFilesPipeline(FilesPipeline):
 class bbsMysqlPipline(object):
     def __init__(self):
         self.connect = pymysql.connect(
-            host='192.168.31.143',  # 数据库地址
+            host='www.findbt.com',  # 数据库地址
             port=3306,  # 端口 注意是int类型
             db='ultrax',# 数据库名称
             user='root',# 用户名
-            passwd='123456',# 用户密码
+            passwd='cyfU2ypeM9AVeVzh',# 用户密码
             charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
             use_unicode=True)
         # 进行数据库连接初始化
         self.cursor = self.connect.cursor()
         # 初始化的时候，清空所有缓存，保证数据的时效性
         redis_db.flushdb()
+        # 这里将插件中初始化的数据进行解析存储到redis，用于后续的spider爬取使用
+        selectSQL = 'select * from pre_common_pluginvar'
+        common = pd.read_sql(selectSQL, self.connect)# 影视大全参数配置表
+        for commonItem in common.get_values():
+            sItem = pd.Series(commonItem)
+            # 影视分类
+            if sItem[5] == 'fenlei':
+                for xItem in sItem[7].split('\r\n'):
+                    abc = xItem.split('=')
+                    # 所有的分类全部进行redis初始化存储，用于后续的区分
+                    redis_db.hset('fenlei', abc[0], abc[1])# 结构：key=1，value=电影
+            # 地区分类
+            if sItem[5] == 'diqu':
+                for xItem in sItem[7].split('\r\n'):
+                    abc = xItem.split('=')
+                    # 所有的分类全部进行redis初始化存储，用于后续的区分
+                    redis_db.hset('diqu', abc[1], abc[0])# 结构：key=大陆，value=1
+            # 题材类型分类
+            if sItem[5] == 'leixing':
+                for xItem in sItem[7].split('\r\n'):
+                    abc = xItem.split('=')
+                    # 所有的分类全部进行redis初始化存储，用于后续的区分
+                    redis_db.hset('leixing', abc[1], abc[0])# 结构：key=动作，value=1
+            # 语言分类
+            if sItem[5] == 'yuyan':
+                for xItem in sItem[7].split('\r\n'):
+                    abc = xItem.split('=')
+                    # 所有的分类全部进行redis初始化存储，用于后续的区分
+                    redis_db.hset('yuyan', abc[1], abc[0])# 结构：key=国语，value=1
         if redis_db.hlen(redis_data_btbbt) == 0:
             selectSQL = 'select * from gt_m_main_info'
             df = pd.read_sql(selectSQL, self.connect)  # 读myql数据库
@@ -78,6 +107,8 @@ class bbsMysqlPipline(object):
             else:
                 # 主贴
                 return_dict = self.bbsNewPosts(item)
+                # 插件模块表写入
+
                 if return_dict is not None:
                     self.gtMianAndReInfo(item,return_dict)
                     # 回帖集合
@@ -130,7 +161,7 @@ class bbsMysqlPipline(object):
                         self.cursor.execute(
                             """insert into pre_forum_attachment(aid, tid, pid, uid, tableid, downloads)
                                        value (%s, %s, %s, %s, %s, %s)""",
-                            ('0', F_B_TID, F_B_PID, '1',xStr , '0',))
+                            ('0', F_B_TID, F_B_PID, '1', xStr, '0',))
                         self.connect.commit()
                         fileAid = self.cursor.lastrowid
                         # 附件内容表
@@ -364,6 +395,49 @@ class bbsMysqlPipline(object):
                 print('回贴表插入异常对象 %s ，异常信息：%s ' % (replinesItem,e,))
                 self.connect.rollback()
                 self.connect.commit()
+
+
+    def pulugDataIn(self,movieItem):
+        # 分类
+        if redis_db.hexists('fenlei', movieItem['type']):
+            fenlei = movieItem['type']
+        else:
+            fenlei = '6' # 暂时6是其他
+        nameList = movieItem['name'].split(',')
+        # 类型
+        if redis_db.hget('leixing', nameList[2]):
+            leixing = redis_db.hget('leixing', nameList[2])
+        else:
+            leixing = '18' # 其他
+        # 地区
+        if redis_db.hget('diqu', nameList[1]):
+            diqu = redis_db.hget('diqu', nameList[1])
+        else:
+            diqu = '11' # 其他
+        # 语言 循环匹配语言，默认其他语言
+        yuyan = '5'  # 其他
+        for rKye in redis_db.hkeys('yuyan'):
+            rValue = redis_db.hget('yuyan', rKye)
+            if nameList[4].find(rKye)>=0:
+                yuyan = rValue
+        classList = movieItem['classInfo'].split(',')
+        imglist = json.loads(movieItem['imgs'])
+        if len(imglist) ==0:
+            picUlr = '默认图片地址url'
+        else:
+            picUlr = imglist[0]['file_urls']
+        try:
+            insertItemSql = 'insert into pre_plugin_xlwsq_ysdp_item(id, diynum, uid, author, title, pic, spic, fenlei, leixing, diqu, yuyan, nianfen, daoyan, yanyuan, dpname, jianjie, info, view, pf0, pf1, pf2, pf3, pf4, pf5, pf6, pf7, pfa, pfb, pfc, pfd, pfe, pff, pfg, pfh, dpcount, tuijian, banner, top, viewgroup, zhuanti, display, dateline)' \
+                            'values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,)'
+            # 这里参数未写完
+            self.cursor.execute(insertItemSql,('0','0','1','admin',nameList[1],picUlr,picUlr,fenlei,leixing,diqu,yuyan,nameList[0],'导演','演员','总体评价 剧情 音乐 画面 特技',movieItem['allInfo'],movieItem['allInfo'],'0',))
+
+            self.connect.commit()
+        except Exception as e:
+            print('插件表写入异常，异常对象%s , 异常内容： %s' % (movieItem,e))
+            self.connect.rollback()
+            self.connect.commit()
+
 
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):
