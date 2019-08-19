@@ -14,6 +14,7 @@ from redis import Redis
 import numpy
 # scrapy 常用异常处理类
 from scrapy.exceptions import DropItem
+from scrapy.utils.project import get_project_settings
 
 # 直接初始化redis连接，启动中间件的时候就可以启动redis了。毕竟是用于去重
 # 如果当前链接被占用，那么会去链接db
@@ -52,6 +53,9 @@ class bbsMysqlPipline(object):
             passwd='cyfU2ypeM9AVeVzh',# 用户密码
             charset='utf8', # 字符编码集 ,注意这里，直接写utf8即可
             use_unicode=True)
+
+        # 读取配置文件
+        self.settings = get_project_settings()
         # 进行数据库连接初始化
         self.cursor = self.connect.cursor()
         # 初始化的时候，清空所有缓存，保证数据的时效性
@@ -108,7 +112,8 @@ class bbsMysqlPipline(object):
                 # 主贴
                 return_dict = self.bbsNewPosts(item)
                 # 插件模块表写入
-
+                bbsRealUrl = self.settings.get('MY_URL') + '/forum.php?mod=viewthread&tid='+str(return_dict['tid'])
+                self.pulugDataIn(item,bbsRealUrl)
                 if return_dict is not None:
                     self.gtMianAndReInfo(item,return_dict)
                     # 回帖集合
@@ -397,47 +402,56 @@ class bbsMysqlPipline(object):
                 self.connect.commit()
 
 
-    def pulugDataIn(self,movieItem):
+    def pulugDataIn(self,movieItem, bbsRealUrl):
+        dataLine = str(int(time.time()))
         # 分类
         if redis_db.hexists('fenlei', movieItem['type']):
             fenlei = movieItem['type']
         else:
             fenlei = '6' # 暂时6是其他
         nameList = movieItem['name'].split(',')
+        classList = movieItem['classInfo'].split(',')
         # 类型
-        if redis_db.hget('leixing', nameList[2]):
-            leixing = redis_db.hget('leixing', nameList[2])
+        if redis_db.hget('leixing', classList[2]):
+            leixing = redis_db.hget('leixing', classList[2])
         else:
             leixing = '18' # 其他
         # 地区
-        if redis_db.hget('diqu', nameList[1]):
-            diqu = redis_db.hget('diqu', nameList[1])
+        if redis_db.hget('diqu', classList[1]):
+            diqu = redis_db.hget('diqu', classList[1])
         else:
             diqu = '11' # 其他
         # 语言 循环匹配语言，默认其他语言
-        yuyan = '5'  # 其他
+        yuyan = []  # 其他
         for rKye in redis_db.hkeys('yuyan'):
             rValue = redis_db.hget('yuyan', rKye)
-            if nameList[4].find(rKye)>=0:
-                yuyan = rValue
-        classList = movieItem['classInfo'].split(',')
+            if nameList[3].find(rKye.decode('utf-8')[0:1])>=0:
+                yuyan.append(rValue.decode('utf-8'))
+        if len(rValue)==0:
+            yuyan.append('5') # 其他
         imglist = json.loads(movieItem['imgs'])
         if len(imglist) ==0:
             picUlr = '默认图片地址url'
         else:
-            picUlr = imglist[0]['file_urls']
+            picUlr = imglist[0]
+        # 年份
+        nianfen = classList[0]
+        if classList[0] == '更早':
+            nianfen = '0'
         try:
             insertItemSql = 'insert into pre_plugin_xlwsq_ysdp_item(id, diynum, uid, author, title, pic, spic, fenlei, leixing, diqu, yuyan, nianfen, daoyan, yanyuan, dpname, jianjie, info, view, pf0, pf1, pf2, pf3, pf4, pf5, pf6, pf7, pfa, pfb, pfc, pfd, pfe, pff, pfg, pfh, dpcount, tuijian, banner, top, viewgroup, zhuanti, display, dateline)' \
-                            'values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,)'
-            # 这里参数未写完
-            self.cursor.execute(insertItemSql,('0','0','1','admin',nameList[1],picUlr,picUlr,fenlei,leixing,diqu,yuyan,nameList[0],'导演','演员','总体评价 剧情 音乐 画面 特技',movieItem['allInfo'],movieItem['allInfo'],'0',))
-
+                            'values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'
+            # 这里是主贴内容
+            self.cursor.execute(insertItemSql,('0','0','1','admin',nameList[1],picUlr,picUlr,fenlei,leixing,diqu,','.join(yuyan),nianfen,'导演','演员','总体评价 剧情 音乐 画面 特技',movieItem['name'],movieItem['plugInfo'],'0','5','5','5','5','5','0','0','0','0','0','0','0','0','0','0','0','0','0','','0','1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19','','0',dataLine,))
+            sId = self.cursor.lastrowid
+            # 附件sql
+            downItemSql = 'insert into pre_plugin_xlwsq_ysdp_down(id, diynum, sid, downname, downurl, display, dateline) values(%s, %s, %s, %s, %s, %s, %s)'
+            self.cursor.execute(downItemSql,('0', 1, sId, '下载链接', bbsRealUrl, '1', dataLine,))
             self.connect.commit()
         except Exception as e:
             print('插件表写入异常，异常对象%s , 异常内容： %s' % (movieItem,e))
             self.connect.rollback()
             self.connect.commit()
-
 
     # 当spider关闭的时候，关闭数据库连接
     def close_spider(self,spider):

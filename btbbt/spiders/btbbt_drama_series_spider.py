@@ -2,10 +2,12 @@
 import scrapy,time,json
 from btbbt.myFileItem import MyFileItem
 from btbbt.movieInfoItem import movieInfo
-from btbbt.pipelines import redis_db,redis_data_btbbt
+from btbbt.pipelines import redis_db, redis_data_btbbt
+from scrapy.utils.project import get_project_settings
 
 # 这了一定要注意Spider 的首字母大写
 class btbbtDramaSeriesSpider(scrapy.Spider):
+    settings = get_project_settings()
     name = 'drama'
     bbsTid = '36'
     '''
@@ -27,6 +29,13 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
         :return: 必须返回
         ::attr("href")
         '''
+        if redis_db.hget(redis_data_btbbt,'dramaSize') is not None:
+            # 初始化第0页开始
+            if redis_db.get('dramapageNum') is None:
+                num = 0
+            else:
+                num = int(redis_db.get('dramapageNum'))
+
         # 开始解析其中具体电影内容
         movidTableList = response.css('#threadlist table')
         for table in movidTableList:
@@ -38,8 +47,7 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                 for movieUrl in allMovieUrlList:
                     realUrl = response.urljoin(movieUrl.css('a::attr("href")').extract_first())
                     yield scrapy.Request(realUrl,callback=self.dramaParse)
-        '''
-        已经测试可
+
         # 下面是翻页请求next_ur
         next_pages = response.css('div.page a')
         self.log(next_pages[len(next_pages)-1].css('a::text').extract_first())
@@ -53,10 +61,12 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
         # 往后的增量爬取，只取前十页数据即可
         if next_ur is not None and num is not None and num >=10:
             num = num + 1
-            redis_db.set('pageNum', num)
+            redis_db.set('dramapageNum', num)
             yield scrapy.Request(next_ur,callback=self.parse)
-        '''
+
     def dramaParse(self,response):
+        # 配置文件中我的域名
+        my_url = self.settings.get('MY_URL')
         onlyId = response.url.split('/')[-1]
         movieTtpeStr = "".join(response.css('div.bg1.border.post h2 a::text').extract()).replace('\t', '').replace('\r','').replace('\n', '')
         movieNameStr = "".join(response.css('div.bg1.border.post h2::text').extract()).replace('\t', '').replace('\r','').replace('\n', '').replace('\'','”').replace('"','”').replace(',','，')
@@ -68,9 +78,9 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
         if len(response.css('p img')) > 0:
             for imgList in response.css('p img'):
                 myfileItem = MyFileItem()
-                if imgList.css('img::attr("src")').extract_first().find('http') == -1:
+                if imgList.css('img::attr("src")').extract_first() is not None:
                     myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
-                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
+                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first().replace('http://','').replace('https://','')
                     movieImgs.append(myfileItem['file_name'])
                     yield myfileItem
 
@@ -105,6 +115,14 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
                         x = x + 1
                         yield myfileItem
         movieText = response.css('#body table')[1].css('p').extract()
+        # 图片的地址路径替换
+        movieTextStr = ''.join(movieText)
+        movieTextStr = movieTextStr.replace('<img src="/upload/',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/upload/')
+        movieTextStr = movieTextStr.replace('<img src="http://',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/')
+        movieTextStr = movieTextStr.replace('<img src="https://',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/')
 
         # 剧集信息入库处理
         if movieTtpeStr is not None:
@@ -117,7 +135,7 @@ class btbbtDramaSeriesSpider(scrapy.Spider):
             movieItem['name'] = movieNameStr.replace('][', ',').replace('[', '').replace(']', '')
             movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            movieItem['allInfo'] = "".join(movieText).replace('<img src="/upload/','<img src="http://192.168.31.143:8081/upload/data/attachment/forum/upload/')
+            movieItem['allInfo'] = movieTextStr
             movieItem['imgs'] = json.dumps(movieImgs,ensure_ascii=False)
             movieItem['filestr'] = json.dumps(movieFiles,ensure_ascii=False)
             movieItem['bbsFid'] = self.bbsTid

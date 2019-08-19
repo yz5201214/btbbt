@@ -39,10 +39,10 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         '''
         if redis_db.hget(redis_data_btbbt,'movieSize') is not None:
             # 初始化第0页开始
-            if redis_db.get('pageNum') is None:
+            if redis_db.get('moviepageNum') is None:
                 num = 0
             else:
-                num = int(redis_db.get('pageNum'))
+                num = int(redis_db.get('moviepageNum'))
 
         # 开始解析其中具体电影内容
         movidTableList = response.css('#threadlist table')
@@ -60,8 +60,7 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                         print('该电影已经入库，无需重复入库 %s' % realUrl)
                         break
                     yield scrapy.Request(realUrl,callback=self.movieParse)
-        '''
-        已经测试可
+
         # 下面是翻页请求next_ur
         next_pages = response.css('div.page a')
         self.log(next_pages[len(next_pages)-1].css('a::text').extract_first())
@@ -75,9 +74,8 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         # 往后的增量爬取，只取前十页数据即可
         if next_ur is not None and num is not None and num >=10:
             num = num + 1
-            redis_db.set('pageNum', num)
+            redis_db.set('moviepageNum', num)
             yield scrapy.Request(next_ur,callback=self.parse)
-        '''
 
     # 获取电影详细信息，磁力链接地址，种子下载地址
     def movieParse(self,response):
@@ -92,11 +90,11 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
         if len(response.css('p img')) > 0:
             for imgList in response.css('p img'):
                 myfileItem = MyFileItem()
-                if imgList.css('img::attr("src")').extract_first().find('http') == -1:
+                if imgList.css('img::attr("src")').extract_first() is not None:
                     myfileItem['file_urls'] = [response.urljoin(imgList.css('img::attr("src")').extract_first())]
-                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first()
+                    myfileItem['file_name'] = imgList.css('img::attr("src")').extract_first().replace('http://','').replace('https://','')
                     movieImgs.append(myfileItem['file_name'])
-                    yield myfileItem
+                yield myfileItem
 
         movieTtpeList = movieTtpeStr.replace('][', ',').replace('[', '').replace(']', '').split(',')
         # 文件路径处理
@@ -126,22 +124,36 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
                     yield myfileItem
 
         movieText = response.css('#body table')[1].css('p').extract()
-        # movieTextStr 不会出现磁力链接，电驴链接的info
+        # movieTextStr 不会出现磁力链接，电驴链接的info，包括百度网盘也不能出现
         movieTextStr = ''.join(movieText)
+        # 图片的地址路径替换
+        movieTextStr = movieTextStr.replace('<img src="http://',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/')
+        movieTextStr = movieTextStr.replace('<img src="https://',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/')
+        movieTextStr = movieTextStr.replace('<img src="/upload/',
+                                            '<img src="' + my_url + '/upload/data/attachment/forum/upload/')
+        plugInfoStr = movieTextStr
         if len(movieText)>0:
             movieStr = "".join(movieText).replace('\t','').replace('\r','').replace('\n','')
             p = re.compile(r'magnet:\?xt=urn:btih:[0-9a-fA-F]{40}')
             m = p.findall(movieStr)
             if len(m) >0:
                 movieMagnet = m[0]
-                movieTextStr.replace(movieMagnet,'')
+                plugInfoStr = plugInfoStr.replace(movieMagnet,'')
             p = re.compile(r'ed2k://\|file\|.*?\|/')
             m = p.findall(movieStr)
             if len(m) >0:
                 movieEd2k = m[0]
-                movieTextStr.replace(movieEd2k, '')
+                plugInfoStr = plugInfoStr.replace(movieEd2k, '')
+            p = re.compile(r'https://pan.baidu.com/s/.*')
+            m = p.findall(movieStr)
+            if len(m) >0:
+                movieBaidu = m[0]
+                plugInfoStr = plugInfoStr.replace(movieBaidu, '')
 
         # 电影信息入库处理
+
         if movieTtpeStr is not None:
             movieItem = movieInfo()
             movieItem['bbsFid'] = self.bbsTid
@@ -153,7 +165,8 @@ class btbbt(scrapy.Spider):# 需要继承scrapy.Spider类
             movieItem['name'] = movieNameStr.replace('][', ',').replace('[', '').replace(']', '')
             movieItem['createTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             movieItem['editTime'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            movieItem['allInfo'] = movieTextStr.replace('<img src="/upload/','<img src="'+my_url+'/upload/data/attachment/forum/upload/')
+            movieItem['allInfo'] = movieTextStr
+            movieItem['plugInfo'] = plugInfoStr# 剔除所有的链接地址
             movieItem['imgs'] = json.dumps(movieImgs,ensure_ascii=False)
             movieItem['filestr'] = json.dumps(movieFiles,ensure_ascii=False)
             movieItem['bbsRelinesListJson'] = '[]'

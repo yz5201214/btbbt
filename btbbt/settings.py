@@ -70,13 +70,13 @@ ROBOTSTXT_OBEY = True
 # 文件下载器中间件
 ITEM_PIPELINES = {
     'btbbt.pipelines.btFilesPipeline': 1,
-    # 'btbbt.pipelines.bbsMysqlPipline': 2,
+    'btbbt.pipelines.bbsMysqlPipline': 2,
 }
 # 文件存放地址
-FILES_STORE = r'D:\\'
+FILES_STORE = r'K:\\'
 # 文件下载有效期，避免下载重复文件，90内下载过不会重复下载
 FILES_EXPIRES = 10
-MY_URL='http://192.168.31.143:8081'
+MY_URL='http://www.findbt.com'
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html

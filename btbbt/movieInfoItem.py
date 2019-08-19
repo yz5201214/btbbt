@@ -8,6 +8,7 @@ class movieInfo(scrapy.Item):
         createTime = scrapy.Field()
         editTime = scrapy.Field()
         allInfo = scrapy.Field()
+        plugInfo = scrapy.Field()
         imgs = scrapy.Field()
         filestr = scrapy.Field()
         # bbs的板块ID
